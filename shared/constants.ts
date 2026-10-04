@@ -38,16 +38,18 @@ export const JUDGE = {
   BAD: 0.25, // ±250ms
 } as const;
 export const JUDGE_EFFECT = {
-  // 溜め効果の割合と、ぶれの倍率
-  PERFECT: { charge: 1.0, scatter: 0.15 },
-  GOOD: { charge: 0.7, scatter: 0.5 },
-  BAD: { charge: 0.3, scatter: 1.0 },
+  // charge=溜め効果の割合、scatter=ぶれ半径の倍率、acc=狙いの正確さ（1で最小ぶれ）
+  PERFECT: { charge: 1.0, scatter: 0.5, acc: 1.0 },
+  GOOD: { charge: 0.7, scatter: 0.75, acc: 0.6 },
+  BAD: { charge: 0.3, scatter: 1.0, acc: 0.0 },
 } as const;
 export const JUDGE_WINDOW_TICKS = Math.ceil(JUDGE.BAD * TICK_RATE); // 判定を探す範囲
 
 // ---- 打点（選手の足元からの高さ）と届く距離 ----
 export const RECEIVE_HIT_HEIGHT = 0.85;
 export const RECEIVE_REACH = 1.3;
+export const RECEIVE_REACH_FAST = 0.75; // 速い打球（RECEIVE_FAST_SPEED以上）に届く距離 【要調整】
+export const RECEIVE_FAST_SPEED = 17;
 export const TOSS_HIT_HEIGHT = 2.2;
 export const TOSS_REACH = 1.2;
 export const SPIKE_REACH = 1.0; // 手（ジャンプ中の最高到達点付近）からの距離
@@ -57,6 +59,8 @@ export const RECEIVE_APEX_MIN = 3.6; // 最高点の高さ
 export const RECEIVE_APEX_MAX = 4.6;
 export const RECEIVE_SCATTER_MAX = 3.2; // 溜め0・BAD時のぶれ半径(m) 【要調整】
 export const RECEIVE_SCATTER_MIN = 0.3; // 溜め最大・PERFECT時のぶれ半径
+export const RECEIVE_EASY_SPEED = 9; // これより速い打球はレシーブが乱れる 【要調整】
+export const RECEIVE_SPEED_PENALTY = 0.14; // 1m/s速いごとのぶれ倍率の増加
 export const SET_TARGET = { lx: 0.6, lz: 1.2 }; // セッターへの返球目標（チームから見た座標）
 
 // ---- トス ----
@@ -95,13 +99,13 @@ export const SERVE_AIM_LX = 2.5;
 // ---- ブロック ----
 export const BLOCK_HAND_BOTTOM = 2.1; // 足元からの高さ（手の下端）
 export const BLOCK_HAND_TOP = 2.55; // 足元からの高さ（手の上端）
-export const BLOCK_HALF_WIDTH = 0.55;
+export const BLOCK_HALF_WIDTH = 0.45;
 export const BLOCK_DEPTH = 0.45; // ネットから手が出る奥行き
 export const BLOCK_RESTITUTION = 0.45;
 
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
-export const LANDING_GRACE_TICKS = 9; // 接地からの得点確定待ち（ラグ補償で巻き戻す余地。150ms）
+export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）
 export const HISTORY_TICKS = 30; // ボール・選手の位置を保存するtick数
 
 // ---- AI ----
@@ -109,9 +113,12 @@ export const AI = {
   timingSigma: 0.07, // AIの押すタイミングのぶれ（秒）【要調整】
   chargeMin: 0.4,
   chargeMax: 1.0,
-  reactionDelay: 0.18, // 相手の打球に反応するまでの秒数
+  reactionDelay: 0.25, // 相手の打球に反応するまでの秒数
+  spikeReactionExtra: 0.12, // スパイクへの反応はさらに遅れる（秒）
+  aimSamples: 4, // スパイクの狙いを何案から選ぶか（多いほど空いた所を突く）
+  fastBallSigma: 0.1, // 速い打球ほどタイミングがぶれる（1m/sごとの倍率増加）
   speedFactor: 0.95, // 移動速度の倍率
   feintRate: 0.15,
-  blockTimingSigma: 0.08,
+  blockTimingSigma: 0.1,
   blockFollowFeint: 0.5, // フェイントを読んで前に出る確率
 };
