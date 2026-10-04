@@ -53,8 +53,6 @@ table.sets th, table.sets td { padding: 4px 12px; border-bottom: 1px solid var(-
 
 /* ---------- 操作パッド ---------- */
 .pad { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; display: flex; pointer-events: none; }
-.pad.half { height: 30%; }
-.pad.flipped { top: 0; bottom: auto; transform: rotate(180deg); }
 .pad > * { pointer-events: auto; }
 .stick-zone { position: relative; flex: 1 1 60%; touch-action: none; }
 .stick-base {
@@ -72,8 +70,6 @@ table.sets th, table.sets td { padding: 4px 12px; border-bottom: 1px solid var(-
   display: flex; align-items: center; justify-content: center; color: #3a2500; font-weight: 800; font-size: 17px;
   box-shadow: 0 4px 14px rgba(0,0,0,.45); touch-action: none; cursor: pointer;
 }
-.pad.half .action-btn { width: 96px; height: 96px; margin-bottom: calc(16px + var(--safe-b)); font-size: 15px; }
-.pad.flipped .action-btn { margin-bottom: calc(16px + var(--safe-t)); }
 .action-btn.down { transform: scale(.93); filter: brightness(.9); }
 .pad.ghost .stick-base, .pad.ghost .action-btn { opacity: 0.08; }
 
@@ -101,13 +97,10 @@ table.sets th, table.sets td { padding: 4px 12px; border-bottom: 1px solid var(-
 }
 .hud-contacts small { display: block; font-size: 10px; opacity: .85; }
 .hud-contacts b { font-size: 28px; color: var(--accent); }
-.hud-contacts.top { top: auto; bottom: calc(31% + 8px); right: auto; left: 10px; transform: rotate(180deg); }
-.pad.half ~ .hud .hud-contacts.main, .hud-contacts.main.low { top: auto; bottom: calc(31% + 8px); }
 .hud-serve {
   position: absolute; left: 50%; top: calc(58px + var(--safe-t)); transform: translateX(-50%); background: rgba(0,0,0,.5);
   border-radius: 10px; padding: 6px 14px; font-size: 16px; font-weight: 700; visibility: hidden;
 }
-.hud-serve.flip { top: auto; bottom: calc(31% + 10px); transform: translateX(-50%) rotate(180deg); }
 .name-tag {
   position: absolute; left: 0; top: 0; display: none; font-size: 12px; font-weight: 700; color: #3ddc6a;
   text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap;
@@ -116,13 +109,11 @@ table.sets th, table.sets td { padding: 4px 12px; border-bottom: 1px solid var(-
   position: absolute; transform: translate(-50%, -50%); font-weight: 900; font-size: 26px; letter-spacing: .04em;
   text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 10px rgba(0,0,0,.5); animation: pop .9s ease-out forwards; white-space: nowrap;
 }
-.judge.flip { animation-name: popflip; }
 .judge.perfect { color: #ffe14d; font-size: 30px; }
 .judge.good { color: #6dff8f; }
 .judge.bad { color: #ff9b4a; }
 .judge.miss { color: #c9c9c9; }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 30% { transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -120%); } }
-@keyframes popflip { 0% { opacity: 0; transform: translate(-50%, -70%) rotate(180deg) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) rotate(180deg) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, 20%) rotate(180deg); } }
 .hud-banner {
   position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%) scale(.9); opacity: 0; transition: opacity .2s, transform .2s;
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 26px; text-align: center; min-width: 200px;

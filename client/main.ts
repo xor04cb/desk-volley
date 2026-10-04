@@ -3,7 +3,7 @@ import { DT } from '../shared/constants.ts';
 import { createGame, press, release, setStick, step } from '../shared/game.ts';
 import { DEFAULT_RULES, type GameEvent, type GameState, type Rules, type TeamId } from '../shared/types.ts';
 import { Hud, ACTION_LABEL } from './hud.ts';
-import { combine, Keyboard, KEYS_ANY, KEYS_P1, KEYS_P2, TouchPad, type PadState } from './input.ts';
+import { combine, Keyboard, KEYS_ANY, TouchPad, type PadState } from './input.ts';
 import { Renderer } from './renderer.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
 import { showMatchEnd, showPauseMenu, showSettings, showTitle } from './menus.ts';
@@ -13,9 +13,8 @@ import { startOnline } from './online.ts';
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLDivElement;
 const renderer = new Renderer(canvas);
+const NAMES: [string, string] = ['あなた', 'CPU'];
 let settings: Settings = loadSettings();
-
-export type Mode = 'cpu' | 'local2p';
 
 /** 1人分の入力（タッチ＋キーボード）と、押した・離した瞬間の検出 */
 class Controller {
@@ -40,7 +39,7 @@ class Controller {
 class LocalSession {
   s: GameState;
   hud: Hud;
-  ctrls: Controller[] = [];
+  ctrl: Controller;
   paused = false;
   acc = 0;
   last = performance.now();
@@ -48,23 +47,13 @@ class LocalSession {
   ended = false;
   view: ViewOptions;
 
-  constructor(
-    readonly mode: Mode,
-    readonly rules: Rules,
-  ) {
-    const two = mode === 'local2p';
-    this.s = createGame({ rules, seed: (Date.now() & 0x7fffffff) >>> 0, humans: [true, two] });
-    renderer.view = two ? 'top' : 0;
-    this.view = { humanTeams: two ? [0, 1] : [0], flippedTeam: two ? 1 : null, landingFor: two ? [0, 1] : [0] };
-    this.hud = new Hud(ui, {
-      names: two ? ['プレイヤー1', 'プレイヤー2'] : ['あなた', 'CPU'],
-      mainTeam: 0,
-      topTeam: two ? 1 : null,
-      onPause: () => this.pause(),
-    });
-    this.ctrls.push(new Controller(0, new TouchPad(ui, false, two), new Keyboard(two ? KEYS_P1 : KEYS_ANY)));
-    if (two) this.ctrls.push(new Controller(1, new TouchPad(ui, true, true), new Keyboard(KEYS_P2)));
-    for (const c of this.ctrls) c.pad.setVisible(settings.showPad);
+  constructor(readonly rules: Rules) {
+    this.s = createGame({ rules, seed: (Date.now() & 0x7fffffff) >>> 0, humans: [true, false] });
+    renderer.view = 0;
+    this.view = { humanTeam: 0 };
+    this.hud = new Hud(ui, { names: NAMES, mainTeam: 0, onPause: () => this.pause() });
+    this.ctrl = new Controller(0, new TouchPad(ui), new Keyboard(KEYS_ANY));
+    this.ctrl.pad.setVisible(settings.showPad);
     this.hud.debugOn = settings.debug;
     window.addEventListener('keydown', this.onKey);
     this.raf = requestAnimationFrame(this.frame);
@@ -83,12 +72,12 @@ class LocalSession {
         this.paused = false;
         this.last = performance.now();
       },
-      retry: () => restart(this.mode, this.rules),
+      retry: () => restart(this.rules),
       title: () => goTitle(),
       changed: (st) => {
         settings = st;
         saveSettings(st);
-        for (const c of this.ctrls) c.pad.setVisible(st.showPad);
+        this.ctrl.pad.setVisible(st.showPad);
         this.hud.debugOn = st.debug;
       },
     });
@@ -98,7 +87,7 @@ class LocalSession {
   tick(n = 1): GameEvent[] {
     const all: GameEvent[] = [];
     for (let i = 0; i < n; i++) {
-      for (const c of this.ctrls) c.apply(this.s);
+      this.ctrl.apply(this.s);
       step(this.s);
       all.push(...this.s.events);
     }
@@ -118,11 +107,10 @@ class LocalSession {
       }
     }
     const actions = drawState(renderer, this.hud, this.s, this.view, dt);
-    this.ctrls.forEach((c) => c.pad.setLabel(ACTION_LABEL[actions[c.team]]));
+    this.ctrl.pad.setLabel(ACTION_LABEL[actions[this.ctrl.team]]);
     if (this.s.phase === 'matchEnd' && !this.ended) {
       this.ended = true;
-      const names: [string, string] = this.mode === 'local2p' ? ['プレイヤー1', 'プレイヤー2'] : ['あなた', 'CPU'];
-      showMatchEnd(ui, this.s, names, { retry: () => restart(this.mode, this.rules), title: () => goTitle() });
+      showMatchEnd(ui, this.s, NAMES, { retry: () => restart(this.rules), title: () => goTitle() });
     }
   };
 
@@ -130,7 +118,7 @@ class LocalSession {
     cancelAnimationFrame(this.raf);
     window.removeEventListener('keydown', this.onKey);
     this.hud.destroy();
-    for (const c of this.ctrls) c.pad.destroy();
+    this.ctrl.pad.destroy();
   }
 }
 
@@ -142,17 +130,16 @@ function clearUI(): void {
   ui.innerHTML = '';
 }
 
-function restart(mode: Mode, rules: Rules): void {
+function restart(rules: Rules): void {
   clearUI();
-  session = new LocalSession(mode, rules);
+  session = new LocalSession(rules);
 }
 
 function goTitle(): void {
   clearUI();
   renderer.view = 0;
   showTitle(ui, {
-    cpu: () => restart('cpu', settings.rules),
-    local2p: () => restart('local2p', settings.rules),
+    cpu: () => restart(settings.rules),
     online: () => {
       clearUI();
       session = startOnline(ui, renderer, settings, goTitle);
@@ -185,8 +172,7 @@ function idle(): void {
     renderer.setBall(s0.ball.pos);
     renderer.setPlayers(s0.players.map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y, z: p.z, fx: p.fx, fz: p.fz, armsUp: p.jump !== 'none' })));
     renderer.setLanding(0, 0, false);
-    renderer.setMarker(0, null);
-    renderer.setMarker(1, null);
+    renderer.setMarker(null);
     renderer.updateCamera(dt, s0.ball.pos.z);
     renderer.render();
     requestAnimationFrame(loop);
@@ -194,8 +180,7 @@ function idle(): void {
   requestAnimationFrame(loop);
 }
 
-// URL で直接モードを指定できる（?mode=cpu / local2p）
+// URL で直接CPU対戦を始められる（?mode=cpu）
 const q = new URLSearchParams(location.search);
-const m = q.get('mode');
-if (m === 'cpu' || m === 'local2p') restart(m, settings.rules);
+if (q.get('mode') === 'cpu') restart(settings.rules);
 else goTitle();

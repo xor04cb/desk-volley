@@ -21,7 +21,7 @@ export const VIEW = {
   lookAhead: -3,
   followFactor: 0.3, // ボールの前後をどれだけ追うか
   followSmooth: 3,
-  topHeight: 26, // 真上視点の高さ
+  serveCamZ: 6.5, // 自チームのサーブ中のカメラ位置（サーバーが画面下の操作ボタンに隠れないように）
 };
 
 const COLORS = {
@@ -119,10 +119,10 @@ export class Renderer {
   private landing: THREE.Mesh;
   private arrow: THREE.Mesh;
   private players = new Map<number, PlayerMesh>();
-  private markers: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number }[] = [];
+  private marker: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number };
   private camZ = 0;
-  /** 視点。0=チーム0の後ろから、1=チーム1の後ろから、'top'=真上（同一端末2人用） */
-  view: 0 | 1 | 'top' = 0;
+  /** 視点。0=チーム0の後ろから、1=チーム1の後ろから */
+  view: 0 | 1 = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -176,7 +176,7 @@ export class Renderer {
     this.arrow.visible = false;
     this.scene.add(this.arrow);
 
-    for (let i = 0; i < 2; i++) this.markers.push(this.makeMarker());
+    this.marker = this.makeMarker();
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -311,8 +311,8 @@ export class Renderer {
   }
 
   /** 足元のマーカー（操作中の囲み、溜めの弧、タイミングリング） */
-  setMarker(i: number, mv: MarkerView | null, pos?: { x: number; z: number }): void {
-    const mk = this.markers[i];
+  setMarker(mv: MarkerView | null, pos?: { x: number; z: number }): void {
+    const mk = this.marker;
     const show = !!mv && mv.player >= 0 && !!pos;
     mk.ring.visible = show;
     mk.timing.visible = false;
@@ -351,19 +351,12 @@ export class Renderer {
     return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight, visible: v.z < 1 };
   }
 
-  updateCamera(dt: number, focusZ: number): void {
+  /** serving：視点側のチームのサーブ中。サーバーが操作ボタンに隠れないようにカメラを後ろへ引く */
+  updateCamera(dt: number, focusZ: number, serving = false): void {
     const k = 1 - Math.exp(-VIEW.followSmooth * dt);
-    if (this.view === 'top') {
-      const portrait = window.innerHeight >= window.innerWidth;
-      this.camera.position.set(0, VIEW.topHeight, 0.001);
-      this.camera.up.set(portrait ? 0 : 1, 0, portrait ? -1 : 0);
-      this.camera.lookAt(0, 0, 0);
-      return;
-    }
     const dir = this.view === 0 ? 1 : -1;
-    const target = focusZ * VIEW.followFactor;
+    const target = serving ? dir * VIEW.serveCamZ : focusZ * VIEW.followFactor;
     this.camZ += (target - this.camZ) * k;
-    this.camera.up.set(0, 1, 0);
     this.camera.position.set(0, VIEW.camHeight, this.camZ + dir * VIEW.camBack);
     this.camera.lookAt(0, 0, this.camZ + dir * VIEW.lookAhead);
   }

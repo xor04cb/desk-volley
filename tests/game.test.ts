@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { hitPoint } from '../shared/actions.ts';
 import { TICK_RATE } from '../shared/constants.ts';
-import { createGame, press, release, step } from '../shared/game.ts';
+import { playerAtPosition } from '../shared/court.ts';
+import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
 import type { ContactKind, GameEvent, GameState, TeamId } from '../shared/types.ts';
@@ -179,6 +180,23 @@ describe('溜めの効果（フェーズ3）', () => {
     expect(res[1].kind).toBe('spike');
     expect(res[2].kind).toBe('spike');
     expect(res[2].speed).toBeGreaterThan(res[1].speed);
+  });
+});
+
+describe('ツーアタックの誤操作防止', () => {
+  const setup = (shiftX: number) => {
+    const s = createGame({ seed: 5 });
+    const setter = playerAtPosition(s, 0, 3); // 前衛中央
+    incoming(s, setter.id, { contactsLeft: 2, lastTouch: 0 });
+    setter.x += shiftX; // ボールから離れた位置にずらす
+    setStick(s, 0, 0, 1); // ネット方向へ倒す
+    return s;
+  };
+  it('打てる位置の近くでスティックをネット方向に倒すとツー', () => {
+    expect(currentAction(setup(0), 0)).toBe('twoJump');
+  });
+  it('ボールを追いかけて走っている最中はトスになる', () => {
+    expect(currentAction(setup(3), 0)).toBe('toss');
   });
 });
 

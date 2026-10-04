@@ -42,10 +42,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 
 export interface HudOptions {
   names: [string, string];
-  /** 残りコンタクトなどを表示するチーム（下側の人） */
+  /** 残りコンタクトなどを表示するチーム（この端末の人） */
   mainTeam: TeamId;
-  /** 同一端末2人：上側の人のチーム表示も出す */
-  topTeam: TeamId | null;
   onPause: () => void;
 }
 
@@ -55,9 +53,9 @@ export class Hud {
   private s0: HTMLSpanElement;
   private s1: HTMLSpanElement;
   private setLabel: HTMLDivElement;
-  private contacts: HTMLDivElement[] = [];
+  private contacts: HTMLDivElement;
   private serveTimer: HTMLDivElement;
-  private nameTags: HTMLDivElement[] = [];
+  private nameTag: HTMLDivElement;
   private debug: HTMLPreElement;
   private banner: HTMLDivElement;
   private bannerUntil = 0;
@@ -77,10 +75,9 @@ export class Hud {
     el('span', 'team-name t1', this.score, opts.names[1]);
     this.setLabel = el('div', 'hud-set', top, 'SET 1');
 
-    this.contacts.push(el('div', 'hud-contacts main', this.root));
-    if (opts.topTeam !== null) this.contacts.push(el('div', 'hud-contacts top', this.root));
+    this.contacts = el('div', 'hud-contacts', this.root);
     this.serveTimer = el('div', 'hud-serve', this.root);
-    for (let i = 0; i < 2; i++) this.nameTags.push(el('div', 'name-tag', this.root));
+    this.nameTag = el('div', 'name-tag', this.root);
     this.debug = el('pre', 'hud-debug', this.root);
     this.banner = el('div', 'hud-banner', this.root);
   }
@@ -92,23 +89,17 @@ export class Hud {
     s.servingTeam === 0 ? this.score.classList.add('serve0') : this.score.classList.remove('serve0');
     s.servingTeam === 1 ? this.score.classList.add('serve1') : this.score.classList.remove('serve1');
 
-    const teams = [this.opts.mainTeam, this.opts.topTeam];
-    this.contacts.forEach((c, i) => {
-      const T = teams[i];
-      if (T === null) return;
-      const n = s.phase === 'rally' && s.teams[T].contactsLeft > 0 && actions[T] !== 'none' && actions[T] !== 'block' ? s.teams[T].contactsLeft : 0;
-      const show = s.phase === 'rally' && n > 0;
-      c.style.visibility = show ? 'visible' : 'hidden';
-      const html = `<small>残りコンタクト</small><b>${n}</b>`;
-      if (c.innerHTML !== html) c.innerHTML = html;
-    });
+    const T = this.opts.mainTeam;
+    const n = s.phase === 'rally' && s.teams[T].contactsLeft > 0 && actions[T] !== 'none' && actions[T] !== 'block' ? s.teams[T].contactsLeft : 0;
+    this.contacts.style.visibility = n > 0 ? 'visible' : 'hidden';
+    const html = `<small>残りコンタクト</small><b>${n}</b>`;
+    if (this.contacts.innerHTML !== html) this.contacts.innerHTML = html;
 
     const humanServe = s.phase === 'serve' && s.teams[s.servingTeam].human && !s.serveTossed;
     this.serveTimer.style.visibility = humanServe ? 'visible' : 'hidden';
     if (humanServe) {
       const left = Math.max(0, s.rules.serveTime - (s.tick - s.phaseTick) / 60);
       this.serveTimer.textContent = `サーブ ${left.toFixed(1)}`;
-      this.serveTimer.classList.toggle('flip', this.opts.topTeam === s.servingTeam);
     }
 
     if (performance.now() > this.bannerUntil) this.banner.classList.remove('show');
@@ -118,19 +109,19 @@ export class Hud {
   }
 
   /** 操作中の選手の名前を足元に出す */
-  setNameTag(i: number, name: string | null, x = 0, y = 0, flip = false): void {
-    const t = this.nameTags[i];
+  setNameTag(name: string | null, x = 0, y = 0): void {
+    const t = this.nameTag;
     if (!name) {
       t.style.display = 'none';
       return;
     }
     t.style.display = 'block';
     if (t.textContent !== name) t.textContent = name;
-    t.style.transform = `translate(${x}px, ${y}px) translate(-50%, ${flip ? '-130%' : '30%'})${flip ? ' rotate(180deg)' : ''}`;
+    t.style.transform = `translate(${x}px, ${y}px) translate(-50%, 30%)`;
   }
 
-  popJudgment(j: Judgment, x: number, y: number, flip = false): void {
-    const p = el('div', `judge ${j.toLowerCase()}${flip ? ' flip' : ''}`, this.root, j);
+  popJudgment(j: Judgment, x: number, y: number): void {
+    const p = el('div', `judge ${j.toLowerCase()}`, this.root, j);
     p.style.left = `${x}px`;
     p.style.top = `${y}px`;
     setTimeout(() => p.remove(), 900);

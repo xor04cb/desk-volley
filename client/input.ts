@@ -9,7 +9,7 @@ export interface PadState {
 
 const STICK_RADIUS = 52; // px
 
-/** タッチ操作パッド。flipped=true で上下反転（向かい側に座る2人目用） */
+/** タッチ操作パッド */
 export class TouchPad {
   readonly el: HTMLDivElement;
   private stickBase: HTMLDivElement;
@@ -23,9 +23,9 @@ export class TouchPad {
   private mf = 0;
   private buttonIds = new Set<number>();
 
-  constructor(parent: HTMLElement, private flipped = false, half = false) {
+  constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
-    this.el.className = 'pad' + (flipped ? ' flipped' : '') + (half ? ' half' : '');
+    this.el.className = 'pad';
     const zone = document.createElement('div');
     zone.className = 'stick-zone';
     this.stickBase = document.createElement('div');
@@ -51,8 +51,8 @@ export class TouchPad {
       this.oy = e.clientY;
       const r = zone.getBoundingClientRect();
       // スティックは触った位置に出す（フローティング）
-      const lx = this.flipped ? r.right - e.clientX : e.clientX - r.left;
-      const ly = this.flipped ? r.bottom - e.clientY : e.clientY - r.top;
+      const lx = e.clientX - r.left;
+      const ly = e.clientY - r.top;
       this.stickBase.style.left = `${lx}px`;
       this.stickBase.style.top = `${ly}px`;
       this.stickBase.classList.add('active');
@@ -90,10 +90,6 @@ export class TouchPad {
   private update(cx: number, cy: number): void {
     let dx = cx - this.ox;
     let dy = cy - this.oy;
-    if (this.flipped) {
-      dx = -dx;
-      dy = -dy;
-    }
     const d = Math.hypot(dx, dy);
     const k = d > STICK_RADIUS ? STICK_RADIUS / d : 1;
     dx *= k;
@@ -142,8 +138,6 @@ export const KEYS_ANY: KeyMap = {
   right: ['KeyD', 'ArrowRight'],
   action: ['Space', 'KeyJ', 'KeyZ', 'Enter'],
 };
-export const KEYS_P1: KeyMap = { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], action: ['Space'] };
-export const KEYS_P2: KeyMap = { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], action: ['Enter', 'Numpad0'] };
 
 const down = new Set<string>();
 let listening = false;

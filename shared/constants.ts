@@ -64,6 +64,8 @@ export const RECEIVE_SPEED_PENALTY = 0.14; // 1m/s速いごとのぶれ倍率の
 export const SET_TARGET = { lx: 0.6, lz: 1.2 }; // セッターへの返球目標（チームから見た座標）
 
 // ---- トス ----
+// ツーアタックは、ボールを打てる位置の近くにいるときだけ。走って追いかけている最中はトスになる（誤操作防止）
+export const TWO_ATTACK_MAX_DIST = 1.2; // m 【要調整】
 export const TOSS_APEX_MIN = 3.6; // 【要調整】
 export const TOSS_APEX_MAX = 6.0;
 export const TOSS_SCATTER_MAX = 1.6;

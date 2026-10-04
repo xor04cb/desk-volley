@@ -11,6 +11,7 @@ import {
   POINT_PAUSE,
   STANDING_REACH,
   TICK_RATE,
+  TWO_ATTACK_MAX_DIST,
 } from './constants.ts';
 import {
   advanceBall,
@@ -241,7 +242,11 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
     if (t.contactsLeft === 3) return 'receive';
     if (t.contactsLeft === 2) {
       const front = isFrontRow(positionOf(s, p)) && toLocal(team, p.x, p.z).lz < 3.5;
-      return front && t.mf > 0.5 ? 'twoJump' : 'toss';
+      if (!front || t.mf <= 0.5) return 'toss';
+      // 走って追いかけている最中（打てる位置から遠い）はトスにする
+      const hp = interceptPoint(s, team, STANDING_REACH + 0.3);
+      const near = hp !== null && Math.hypot(hp.x - p.x, hp.z - p.z) <= TWO_ATTACK_MAX_DIST;
+      return near ? 'twoJump' : 'toss';
     }
     // 残り1回：高いボールならジャンプ、低いボールなら山なりで返す
     const high = interceptPoint(s, team, STANDING_REACH + 0.3);

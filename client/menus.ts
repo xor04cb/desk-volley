@@ -18,11 +18,10 @@ function button(parent: HTMLElement, text: string, onClick: () => void, cls = 'b
   return b;
 }
 
-export function showTitle(ui: HTMLElement, h: { cpu: () => void; local2p: () => void; online: () => void; settings: () => void }): void {
+export function showTitle(ui: HTMLElement, h: { cpu: () => void; online: () => void; settings: () => void }): void {
   const p = panel(ui, 'title');
   p.innerHTML = '<h1>卓上バレー</h1><p class="sub">ACTIONボタンひとつで<br>レシーブ・トス・スパイク</p>';
   button(p, 'CPUと対戦', h.cpu, 'btn wide primary');
-  button(p, '2人で対戦（同じ端末）', h.local2p);
   button(p, 'オンライン対戦', h.online);
   button(p, 'ルール設定', h.settings, 'btn wide ghost');
   const help = document.createElement('p');
