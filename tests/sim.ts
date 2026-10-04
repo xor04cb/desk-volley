@@ -4,12 +4,12 @@ import type { GameState } from '../shared/types.ts';
 
 export function simulate(seed: number, rules = {}, maxTicks = 60 * 60 * 60) {
   const s: GameState = createGame({ seed, humans: [false, false], rules });
-  const stats = { contacts: {} as Record<string, number>, judges: {} as Record<string, number>, points: {} as Record<string, number>, blocks: 0, nets: 0, rallies: 0, maxRally: 0 };
+  const stats = { contacts: {} as Record<string, number>, judges: {} as Record<string, number>, points: {} as Record<string, number>, blocks: 0, nets: 0, dives: 0, rallies: 0, maxRally: 0 };
   let rally = 0;
   while (s.phase !== 'matchEnd' && s.tick < maxTicks) {
     step(s);
     for (const e of s.events) {
-      if (e.type === 'contact') { stats.contacts[e.info.kind] = (stats.contacts[e.info.kind] ?? 0) + 1; rally++; }
+      if (e.type === 'contact') { stats.contacts[e.info.kind] = (stats.contacts[e.info.kind] ?? 0) + 1; if (e.info.dive) stats.dives++; rally++; }
       if (e.type === 'judge') stats.judges[e.judgment] = (stats.judges[e.judgment] ?? 0) + 1;
       if (e.type === 'point') { stats.points[e.reason] = (stats.points[e.reason] ?? 0) + 1; stats.rallies++; stats.maxRally = Math.max(stats.maxRally, rally); rally = 0; }
       if (e.type === 'block') stats.blocks++;

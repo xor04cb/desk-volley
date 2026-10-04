@@ -1,4 +1,5 @@
 // 調整用の定数をここに集める。【要確認】【要調整】の値はすべて仮の値。
+import type { ContactKind } from './types.ts';
 // 座標系：x=横（右が+）、y=高さ、z=奥行き。ネットは z=0。チーム0は z>0 側（手前）。1単位=1m。
 
 // ---- ループ ----
@@ -24,10 +25,10 @@ export const FLOOR_BOUNCE = 0.35; // 床での跳ね返り（演出用。得点�
 export const PLAYER_SPEED = 5.2; // m/s 【要調整】
 export const PLAYER_HEIGHT = 1.9;
 export const STANDING_REACH = 2.4; // 立った状態で手が届く高さ
-export const JUMP_HEIGHT_MIN = 0.35; // 溜め0のジャンプ高さ 【要調整】
-export const JUMP_HEIGHT_MAX = 0.95; // 溜め最大のジャンプ高さ 【要調整】
-export const BLOCK_JUMP_MIN = 0.3;
-export const BLOCK_JUMP_MAX = 0.8;
+export const JUMP_HEIGHT_MIN = 0.5; // 溜め0のジャンプ高さ 【要調整】
+export const JUMP_HEIGHT_MAX = 1.25; // 溜め最大のジャンプ高さ 【要調整】
+export const BLOCK_JUMP_MIN = 0.45; // 【要調整】
+export const BLOCK_JUMP_MAX = 1.05; // 【要調整】
 export const PLAYER_MIN_NET_DIST = 0.35; // 選手がネットに近づける距離
 
 // ---- 溜め・タイミング ----
@@ -43,7 +44,10 @@ export const JUDGE_EFFECT = {
   GOOD: { charge: 0.7, scatter: 0.75, acc: 0.6 },
   BAD: { charge: 0.3, scatter: 1.0, acc: 0.0 },
 } as const;
-export const JUDGE_WINDOW_TICKS = Math.ceil(JUDGE.BAD * TICK_RATE); // 判定を探す範囲
+/** 早めに離したときの猶予（秒）。この分だけ早くても同じ評価になる 【要調整】 */
+const EARLY_GRACE_SEC = 0.07;
+export const EARLY_GRACE: Partial<Record<ContactKind, number>> = { receive: EARLY_GRACE_SEC, toss: EARLY_GRACE_SEC };
+export const JUDGE_WINDOW_TICKS = Math.ceil((JUDGE.BAD + EARLY_GRACE_SEC) * TICK_RATE); // 判定を探す範囲
 
 // ---- 打点（選手の足元からの高さ）と届く距離 ----
 export const RECEIVE_HIT_HEIGHT = 0.85;
@@ -105,6 +109,14 @@ export const BLOCK_HALF_WIDTH = 0.45;
 export const BLOCK_DEPTH = 0.45; // ネットから手が出る奥行き
 export const BLOCK_RESTITUTION = 0.45;
 
+// ---- フライング（届かないボールに飛び込むレシーブ） ----
+export const DIVE_REACH = 1.4; // 普通に届く距離より、さらにこれだけ遠くまで届く(m) 【要調整】
+export const DIVE_REACH_FAST = 0; // 速い打球（RECEIVE_FAST_SPEED以上）のときのフライングの伸び 【要調整】
+export const DIVE_SCATTER_MUL = 1.6; // 返球のぶれの倍率（フライングは乱れやすい） 【要調整】
+export const DIVE_SLIDE_TICKS = 15; // 飛び込む動きの長さ（0.25秒）
+export const DIVE_RECOVER_TICKS = 60; // 飛び込んでから起き上がるまで（1秒）。この間は動けない 【要調整】
+export const DIVE_HAND_OFFSET = 0.7; // 飛び込んだ体の位置から手（打点）までの距離
+
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）
@@ -123,4 +135,5 @@ export const AI = {
   feintRate: 0.15,
   blockTimingSigma: 0.1,
   blockFollowFeint: 0.5, // フェイントを読んで前に出る確率
+  diveRate: 0.5, // フライングで届くボールに飛び込む確率 【要調整】
 };

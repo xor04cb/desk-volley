@@ -42,6 +42,11 @@ export interface Player {
   jump: 'none' | 'attack' | 'block';
   /** この跳躍でもう打ったか */
   swung: boolean;
+  /** フライングを始めたtick（-1=していない）。起き上がるまで動けない */
+  diveTick: number;
+  /** 飛び込む先（体の位置） */
+  diveX: number;
+  diveZ: number;
   /** 向き（チームから見た前方向に対するx成分・z成分。描画用） */
   fx: number;
   fz: number;
@@ -75,6 +80,8 @@ export interface PendingContact {
   mx: number;
   mf: number;
   dt: number;
+  /** フライングでの打球 */
+  dive?: boolean;
 }
 
 /** 直近の打球の詳細（デバッグ表示用） */
@@ -87,6 +94,7 @@ export interface ContactInfo {
   charge: number; // 溜め量 c
   effCharge: number; // 判定を反映した溜め効果
   dt: number; // タイミングのずれ（秒、+は遅い）
+  dive: boolean; // フライングでの打球
   apex: number; // 最高点
   speed: number; // 初速
   scatter: number; // ぶれ半径
@@ -97,7 +105,7 @@ export interface ContactInfo {
 }
 
 export type GameEvent =
-  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number }
+  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean }
   | { type: 'contact'; info: ContactInfo }
   | { type: 'jump'; player: number; height: number; charge: number }
   | { type: 'block'; player: number }

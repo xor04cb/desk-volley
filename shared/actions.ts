@@ -10,6 +10,10 @@ import {
   BLOCK_JUMP_MIN,
   BLOCK_RESTITUTION,
   CHARGE_MAX,
+  DIVE_HAND_OFFSET,
+  DIVE_REACH,
+  DIVE_REACH_FAST,
+  DIVE_SCATTER_MUL,
   FEINT_APEX_ABOVE_NET,
   FEINT_MAX_DIST,
   G,
@@ -147,6 +151,19 @@ export interface JudgeResult {
   judgment: Judgment;
   tStar: number;
   dt: number;
+  /** 普通には届かず、フライングで届く */
+  dive: boolean;
+}
+
+/** フライングできる動作（床に近いボールを上げる動作だけ） */
+export const canDive = (kind: ContactKind): boolean => kind === 'receive' || kind === 'free';
+
+/** 届く距離（フライングを含む） */
+export function maxReachOf(kind: ContactKind, ballSpeed = 0): number {
+  if (!canDive(kind)) return reachOf(kind, ballSpeed);
+  // 速い打球ほどフライングでも伸びない（強打を何でも拾えてしまわないように）
+  const k = clamp((ballSpeed - RECEIVE_EASY_SPEED) / (RECEIVE_FAST_SPEED - RECEIVE_EASY_SPEED), 0, 1);
+  return reachOf(kind, ballSpeed) + lerp(DIVE_REACH, DIVE_REACH_FAST, k);
 }
 
 /**
@@ -167,9 +184,26 @@ export function judgeRelease(s: GameState, p: Player, kind: ContactKind, release
       bestT = t;
     }
   }
-  if (bestT < 0 || best > reachOf(kind, ballSpeed(s))) return { judgment: 'MISS', tStar: -1, dt: 0 };
+  if (bestT < 0 || best > maxReachOf(kind, ballSpeed(s))) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false };
   const dt = (releaseTick - bestT) / TICK_RATE;
-  return { judgment: judgeOf(dt), tStar: bestT, dt };
+  return { judgment: judgeOf(dt, kind), tStar: bestT, dt, dive: best > reachOf(kind, ballSpeed(s)) };
+}
+
+/** フライング：打点のボールに向かって飛び込む。起き上がるまで動けない */
+export function startDive(s: GameState, p: Player, ballTick: number): void {
+  const b = ballAt(s, ballTick) ?? s.ball.pos;
+  const dx = p.x - b.x;
+  const dz = p.z - b.z;
+  const d = Math.hypot(dx, dz) || 1;
+  // 体は、ボールの手前（選手側）に手が届く位置まで滑り込む
+  const k = Math.min(DIVE_HAND_OFFSET / d, 1);
+  p.diveTick = s.tick;
+  p.diveX = b.x + dx * k;
+  p.diveZ = b.z + dz * k;
+  p.vx = 0;
+  p.vz = 0;
+  p.fx = -dx / d;
+  p.fz = -dz / d;
 }
 
 export const ballSpeed = (s: GameState): number => Math.hypot(s.ball.vel.x, s.ball.vel.y, s.ball.vel.z);
@@ -263,12 +297,13 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
   let vel: Vec3;
 
   if (kind === 'spike' && s.rules.feint && pc.charge < SPIKE_CHARGE_FLOOR) kind = 'feint';
+  const diveMul = pc.dive ? DIVE_SCATTER_MUL : 1; // フライングは返球が乱れやすい
 
   switch (kind) {
     case 'receive': {
       const t = toWorld(T, SET_TARGET.lx, SET_TARGET.lz);
       const vIn = Math.hypot(s.ball.vel.x, s.ball.vel.y, s.ball.vel.z);
-      scatter = lerp(RECEIVE_SCATTER_MAX, RECEIVE_SCATTER_MIN, ce) * eff.scatter * (1 + Math.max(0, vIn - RECEIVE_EASY_SPEED) * RECEIVE_SPEED_PENALTY);
+      scatter = lerp(RECEIVE_SCATTER_MAX, RECEIVE_SCATTER_MIN, ce) * eff.scatter * (1 + Math.max(0, vIn - RECEIVE_EASY_SPEED) * RECEIVE_SPEED_PENALTY) * diveMul;
       const off = randInCircle(s.rng, scatter);
       tx = t.x + off.x;
       tz = t.z + off.z;
@@ -319,7 +354,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
     }
     case 'free': {
       const t = toWorld(T, randRange(s.rng, -2.5, 2.5), -randRange(s.rng, 4, 7));
-      scatter = lerp(2.0, 0.5, eff.acc);
+      scatter = lerp(2.0, 0.5, eff.acc) * diveMul;
       const off = randInCircle(s.rng, scatter);
       tx = t.x + off.x;
       tz = t.z + off.z;
@@ -372,6 +407,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
     charge: pc.charge,
     effCharge: ce,
     dt: pc.dt,
+    dive: !!pc.dive,
     apex: kind === 'spike' ? Math.max(...s.path.slice(0, 60).map((q) => q.y), from.y) : apex,
     speed: Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z),
     scatter,
@@ -450,10 +486,9 @@ export function startJump(s: GameState, p: Player, kind: 'attack' | 'block', cha
   p.y = 0.0001;
   p.jump = kind;
   p.swung = false;
-  if (kind === 'block') {
-    p.vx = 0;
-    p.vz = 0;
-  }
+  // その場で真上に跳ぶ（助走の勢いは残さない）
+  p.vx = 0;
+  p.vz = 0;
   s.events.push({ type: 'jump', player: p.id, height: h, charge });
 }
 

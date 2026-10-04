@@ -120,8 +120,10 @@ export class Hud {
     t.style.transform = `translate(${x}px, ${y}px) translate(-50%, 30%)`;
   }
 
-  popJudgment(j: Judgment, x: number, y: number): void {
+  /** note：判定の下に小さく出す補足（「フライング！」など） */
+  popJudgment(j: Judgment, x: number, y: number, note?: string): void {
     const p = el('div', `judge ${j.toLowerCase()}`, this.root, j);
+    if (note) el('small', 'judge-note', p, note);
     p.style.left = `${x}px`;
     p.style.top = `${y}px`;
     setTimeout(() => p.remove(), 900);

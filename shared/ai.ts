@@ -6,7 +6,6 @@ import {
   JUMP_HEIGHT_MAX,
   JUMP_HEIGHT_MIN,
   PLAYER_MIN_NET_DIST,
-  PLAYER_SPEED,
   RECEIVE_HIT_HEIGHT,
   SPIKE_AIM_LX,
   SPIKE_TARGET_LZ,
@@ -23,11 +22,13 @@ import {
   chooseAttacker,
   hitPoint,
   interceptPoint,
+  maxReachOf,
   opponentAttacking,
   reachOf,
   riseTime,
   serveHitTick,
   serveToss,
+  startDive,
   startJump,
 } from './actions.ts';
 import { FORMATION, isFrontRow, judgeOf, positionOf, toLocal, toWorld } from './court.ts';
@@ -102,16 +103,8 @@ export function runAI(s: GameState, T: TeamId): Target | null {
     const spot = { x: ip.x + back.x, z: ip.z + back.z };
     if (s.aiJumpTick[T] < 0) s.aiJumpTick[T] = ip.tick - Math.round(riseTime(AI_JUMP_H) * TICK_RATE);
     if (s.tick >= s.aiJumpTick[T] && p.y === 0) {
-      const rise = riseTime(AI_JUMP_H);
-      const dx = spot.x - p.x;
-      const dz = spot.z - p.z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      const v = Math.min(d / rise, PLAYER_SPEED);
+      // 人と同じく、その場で真上に跳ぶ
       startJump(s, p, 'attack', AI_ATTACK_CHARGE);
-      if (d > 0.01) {
-        p.vx = (dx / d) * v;
-        p.vz = (dz / d) * v;
-      }
       return null;
     }
     return spot;
@@ -148,12 +141,17 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
   if (!b0 || !b1) return;
   const d0 = dist3(b0, hitPoint(s, p, kind, s.tick));
   const d1 = dist3(b1, hitPoint(s, p, kind, s.tick + 1));
-  if (d0 > reachOf(kind, ballSpeed(s)) || d1 < d0) return;
+  if (d0 > maxReachOf(kind, ballSpeed(s)) || d1 < d0) return;
+  const dive = d0 > reachOf(kind, ballSpeed(s)); // 普通には届かない：フライング
+  if (dive && rand(s.rng) >= AI.diveRate) {
+    s.aiMissTick[T] = s.tick; // 飛び込まずに見送る
+    return;
+  }
 
   const vIn = Math.hypot(s.ball.vel.x, s.ball.vel.y, s.ball.vel.z);
   const sigma = AI.timingSigma * (1 + Math.max(0, vIn - 8) * AI.fastBallSigma);
   const dt = randNormal(s.rng) * sigma;
-  const judgment = judgeOf(dt);
+  const judgment = judgeOf(dt, kind);
   let charge = randRange(s.rng, AI.chargeMin, AI.chargeMax);
   let mx = 0;
   let mf = 0;
@@ -176,13 +174,14 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
     if (s.rules.feint && rand(s.rng) < AI.feintRate) charge = 0.05;
   }
   const action: ActionKind = kind === 'spike' || kind === 'feint' ? 'spike' : kind === 'free' ? 'free' : kind === 'toss' ? 'toss' : 'receive';
-  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge });
+  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge, dive });
   if (kind === 'spike') p.swung = true;
   if (judgment === 'MISS') {
     s.aiMissTick[T] = s.tick;
     return;
   }
-  applyContact(s, { tick: s.tick, team: T, player: p.id, kind, judgment, charge, mx, mf, dt }, s.tick);
+  if (dive) startDive(s, p, s.tick);
+  applyContact(s, { tick: s.tick, team: T, player: p.id, kind, judgment, charge, mx, mf, dt, dive }, s.tick);
 }
 
 function aiServe(s: GameState, T: TeamId): void {

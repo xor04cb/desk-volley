@@ -4,6 +4,8 @@ import {
   BALL_RADIUS,
   COURT_HALF_LENGTH,
   COURT_HALF_WIDTH,
+  DIVE_RECOVER_TICKS,
+  DIVE_SLIDE_TICKS,
   DT,
   HISTORY_TICKS,
   LANDING_GRACE_TICKS,
@@ -24,11 +26,13 @@ import {
   hitPoint,
   interceptPoint,
   judgeRelease,
+  maxReachOf,
   opponentAttacking,
   reachOf,
   scheduleContact,
   serveHitTick,
   serveToss,
+  startDive,
   startJump,
   stepJumps,
   updateActors,
@@ -75,6 +79,9 @@ export function createGame(opts: GameOptions = {}): GameState {
         vz: 0,
         jump: 'none',
         swung: false,
+        diveTick: -1,
+        diveX: 0,
+        diveZ: 0,
         fx: 0,
         fz: team === 0 ? -1 : 1,
       });
@@ -163,6 +170,7 @@ export function startServe(s: GameState): void {
     p.vz = 0;
     p.jump = 'none';
     p.swung = false;
+    p.diveTick = -1;
   }
   s.ball = makeBall();
   holdBall(s);
@@ -217,10 +225,11 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
       if (s.pending && s.pending.team === team) return;
       const kind: ContactKind = action;
       const r = judgeRelease(s, p, kind, tick);
-      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge });
+      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive });
       if (kind === 'spike') p.swung = true;
       if (r.judgment === 'MISS') return;
-      scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt });
+      if (r.dive) startDive(s, p, r.tStar);
+      scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt, dive: r.dive });
       return;
     }
     default:
@@ -234,6 +243,7 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
   const p = s.players[t.controlled];
   if (s.phase === 'serve') return s.servingTeam === team && s.serveTossed && p.id === s.server ? 'serve' : 'none';
   if (s.phase !== 'rally') return 'none';
+  if (p.diveTick >= 0) return 'none'; // フライング中は何もできない
   if (p.jump === 'attack') return p.swung ? 'none' : 'spike';
   if (p.jump === 'block') return 'none';
   if (ballComingTo(s, team)) {
@@ -310,8 +320,20 @@ function movePlayers(s: GameState): void {
 
   for (const p of s.players) {
     const team = s.teams[p.team];
+    if (p.diveTick >= 0) {
+      // フライング：飛び込む先へ滑り込み、起き上がるまで動けない
+      const e = s.tick - p.diveTick;
+      if (e < DIVE_SLIDE_TICKS) {
+        const k = 1 / (DIVE_SLIDE_TICKS - e);
+        p.x += (p.diveX - p.x) * k;
+        p.z += (p.diveZ - p.z) * k;
+      }
+      if (e >= DIVE_RECOVER_TICKS) p.diveTick = -1;
+      clampToSide(p, false);
+      continue;
+    }
     if (p.jump !== 'none') {
-      // 空中では踏み切った勢いのまま
+      // 空中では動けない（踏み切りで速度を0にしているので、真上に上がって降りる）
       p.x += p.vx * DT;
       p.z += p.vz * DT;
       clampToSide(p, false);
@@ -444,6 +466,6 @@ export function timeToContact(s: GameState, team: TeamId): number {
       bt = t;
     }
   }
-  if (bt < 0 || best > reachOf(kind, ballSpeed(s)) * 1.5) return -1;
+  if (bt < 0 || best > Math.max(reachOf(kind, ballSpeed(s)) * 1.5, maxReachOf(kind, ballSpeed(s)))) return -1;
   return (bt - s.tick) / TICK_RATE;
 }

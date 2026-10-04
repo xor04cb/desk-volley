@@ -7,7 +7,7 @@ import { combine, Keyboard, KEYS_ANY, TouchPad, type PadState } from './input.ts
 import { Renderer } from './renderer.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
 import { showMatchEnd, showPauseMenu, showSettings, showTitle } from './menus.ts';
-import { drawState, showEvents, type ViewOptions } from './view.ts';
+import { drawState, poseOf, showEvents, type ViewOptions } from './view.ts';
 import { startOnline } from './online.ts';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -106,7 +106,7 @@ class LocalSession {
         if (ev.length) showEvents(renderer, this.hud, this.s, ev, this.view);
       }
     }
-    const actions = drawState(renderer, this.hud, this.s, this.view, dt);
+    const actions = drawState(renderer, this.hud, this.s, this.view);
     this.ctrl.pad.setLabel(ACTION_LABEL[actions[this.ctrl.team]]);
     if (this.s.phase === 'matchEnd' && !this.ended) {
       this.ended = true;
@@ -170,10 +170,10 @@ function idle(): void {
       step(s0);
     }
     renderer.setBall(s0.ball.pos);
-    renderer.setPlayers(s0.players.map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y, z: p.z, fx: p.fx, fz: p.fz, armsUp: p.jump !== 'none' })));
+    renderer.setPlayers(s0.players.map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y, z: p.z, fx: p.fx, fz: p.fz, pose: poseOf(s0, p) })));
     renderer.setLanding(0, 0, false);
     renderer.setMarker(null);
-    renderer.updateCamera(dt, s0.ball.pos.z);
+    renderer.updateCamera();
     renderer.render();
     requestAnimationFrame(loop);
   };

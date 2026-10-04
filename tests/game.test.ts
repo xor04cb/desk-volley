@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitPoint } from '../shared/actions.ts';
+import { hitPoint, startJump } from '../shared/actions.ts';
 import { TICK_RATE } from '../shared/constants.ts';
 import { playerAtPosition } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
@@ -71,7 +71,8 @@ describe('タイミング判定（フェーズ4）', () => {
   const cases: [number, string][] = [
     [0, 'PERFECT'],
     [2, 'PERFECT'],
-    [-5, 'GOOD'],
+    [-5, 'PERFECT'], // レシーブは早めに離すと甘い（EARLY_GRACE）
+    [-8, 'GOOD'],
     [6, 'GOOD'], // 遅れて離した → 巻き戻して打つ
     [-12, 'BAD'],
     [13, 'BAD'],
@@ -180,6 +181,58 @@ describe('溜めの効果（フェーズ3）', () => {
     expect(res[1].kind).toBe('spike');
     expect(res[2].kind).toBe('spike');
     expect(res[2].speed).toBeGreaterThan(res[1].speed);
+  });
+});
+
+describe('フライング', () => {
+  /** レシーブする選手を、ボールの落下地点から横に shiftX ずらしておく */
+  const setup = (shiftX: number) => {
+    const s = createGame({ seed: 3 });
+    incoming(s, receiver, { apex: 4 });
+    const t = contactTick(s, receiver, 'receive');
+    s.players[receiver].x += shiftX;
+    return { s, t };
+  };
+  it('普通には届かないボールは、飛び込んで上げる（返球は乱れる）', () => {
+    const { s, t } = setup(2.0);
+    const normal = setup(0);
+    hitAt(normal.s, 0, normal.t, 0, 20);
+    const ev = hitAt(s, 0, t, 0, 20);
+    const j = ev.find((e) => e.type === 'judge');
+    expect(j && j.type === 'judge' && j.dive).toBe(true);
+    expect(s.lastContact?.dive).toBe(true);
+    expect(s.lastContact!.scatter).toBeGreaterThan(normal.s.lastContact!.scatter);
+    // 飛び込んだ後は起き上がるまで動けない
+    const p = s.players[receiver];
+    expect(p.diveTick).toBeGreaterThanOrEqual(0);
+    const x = p.x;
+    const z = p.z;
+    for (let i = 0; i < 10; i++) step(s);
+    expect(p.x).toBeCloseTo(x, 6);
+    expect(p.z).toBeCloseTo(z, 6);
+  });
+  it('フライングでも届かないボールは空振り', () => {
+    const { s, t } = setup(4.0);
+    const ev = hitAt(s, 0, t, 0, 20);
+    const j = ev.find((e) => e.type === 'judge');
+    expect(j && j.type === 'judge' ? j.judgment : null).toBe('MISS');
+  });
+});
+
+describe('ジャンプ', () => {
+  it('その場で真上に跳び、走っていた勢いもスティックも空中では効かない', () => {
+    const s = createGame({ seed: 6 });
+    const p = playerAtPosition(s, 0, 3);
+    incoming(s, p.id, { contactsLeft: 1, lastTouch: 0 });
+    setStick(s, 0, 1, 1);
+    step(s); // 走り出す
+    const x0 = p.x;
+    const z0 = p.z;
+    startJump(s, p, 'attack', 1);
+    for (let i = 0; i < 20; i++) step(s);
+    expect(p.y).toBeGreaterThan(0);
+    expect(p.x).toBeCloseTo(x0, 6);
+    expect(p.z).toBeCloseTo(z0, 6);
   });
 });
 

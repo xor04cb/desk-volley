@@ -1,6 +1,6 @@
 // コート上の座標変換・フォーメーション
-import { COURT_HALF_LENGTH, COURT_HALF_WIDTH, JUDGE, PLAYER_MIN_NET_DIST, SERVE_BEHIND_END } from './constants.ts';
-import type { GameState, Judgment, Player, TeamId } from './types.ts';
+import { COURT_HALF_LENGTH, COURT_HALF_WIDTH, EARLY_GRACE, JUDGE, PLAYER_MIN_NET_DIST, SERVE_BEHIND_END } from './constants.ts';
+import type { ContactKind, GameState, Judgment, Player, TeamId } from './types.ts';
 
 /** チームから見た座標（lx=右+、lz=ネットからの距離）→ ワールド座標 */
 export function toWorld(team: TeamId, lx: number, lz: number): { x: number; z: number } {
@@ -51,9 +51,10 @@ export function clampToSide(p: Player, serving: boolean): void {
   p.z = w.z;
 }
 
-/** タイミングのずれ（秒）から評価を出す */
-export function judgeOf(dt: number): Judgment {
-  const a = Math.abs(dt);
+/** タイミングのずれ（秒、負=早い）から評価を出す。レシーブ・トスは早めに離したときに甘くする */
+export function judgeOf(dt: number, kind?: ContactKind): Judgment {
+  const early = (kind && EARLY_GRACE[kind]) || 0;
+  const a = dt < 0 ? Math.max(0, -dt - early) : dt;
   if (a <= JUDGE.PERFECT) return 'PERFECT';
   if (a <= JUDGE.GOOD) return 'GOOD';
   if (a <= JUDGE.BAD) return 'BAD';

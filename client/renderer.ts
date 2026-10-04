@@ -18,10 +18,8 @@ export const VIEW = {
   fov: 50,
   camHeight: 14,
   camBack: 17.5, // ネットからの距離
-  lookAhead: -3,
-  followFactor: 0.3, // ボールの前後をどれだけ追うか
-  followSmooth: 3,
-  serveCamZ: 6.5, // 自チームのサーブ中のカメラ位置（サーバーが画面下の操作ボタンに隠れないように）
+  lookAhead: -1.5, // 高いボール（6m）が奥のコートの上でも上のHUDに隠れにくい向き
+  camZ: 4.5, // カメラの前後位置（固定。ボールは追わない）。自チームのサーバーが操作ボタンに隠れず、相手コートの奥まで見える位置
 };
 
 const COLORS = {
@@ -51,9 +49,41 @@ export interface PlayerView {
   z: number;
   fx: number;
   fz: number;
-  /** 腕を上げる（ジャンプ中など） */
-  armsUp: boolean;
+  pose: Pose;
 }
+
+/** 選手の姿勢。idle=通常、block=ブロック、spikeReady=スパイク・サーブの振りかぶり、spikeSwing=その振り下ろし、dive=フライング */
+export type Pose = 'idle' | 'block' | 'spikeReady' | 'spikeSwing' | 'dive';
+
+const SWING_TIME = 0.15; // 秒。振り下ろし・飛び込みの速さ
+
+/** 前の姿勢から素早くつなぐ姿勢（つなぎ元） */
+const BLEND_FROM: Partial<Record<Pose, Pose>> = { spikeSwing: 'spikeReady', dive: 'idle' };
+
+/**
+ * 姿勢の値。lx/rx=左右の腕の前後の角度（負で前、π付近で真上、正で後ろ）、
+ * lz/rz=腕を横に開く角度（外向きが+）、lean=体の前傾（+で前）、twist=体のひねり（+で右肩を引く）
+ */
+interface PoseValues {
+  lx: number;
+  rx: number;
+  lz: number;
+  rz: number;
+  lean: number;
+  twist: number;
+}
+const PI = Math.PI;
+const POSES: Record<Pose, PoseValues> = {
+  idle: { lx: -0.15, rx: -0.15, lz: 0, rz: 0, lean: 0, twist: 0 },
+  // 両腕をまっすぐ上に伸ばして少し開く
+  block: { lx: -PI * 0.98, rx: -PI * 0.98, lz: 0.16, rz: 0.16, lean: 0.05, twist: 0 },
+  // 左腕でボールを指し、右腕は真横から頭の後ろへ引き上げる（後ろからのカメラでも分かるように横に張る）。体は反る
+  spikeReady: { lx: -PI * 0.8, rx: -PI * 0.25, lz: 0.05, rz: 2.6, lean: -0.2, twist: 0.25 },
+  // 右腕を体の左下まで振り切り、体を前に倒す
+  spikeSwing: { lx: -0.1, rx: -0.5, lz: 0.2, rz: -0.9, lean: 0.3, twist: -0.25 },
+  // 前へ飛び込んで床に体を伸ばし、両腕をボールの方へ伸ばす
+  dive: { lx: -PI * 0.9, rx: -PI * 0.9, lz: 0.08, rz: 0.08, lean: 1.4, twist: 0 },
+};
 
 export interface MarkerView {
   /** 操作中の選手のid（-1=なし） */
@@ -70,6 +100,8 @@ class PlayerMesh {
   body: THREE.Group;
   armL: THREE.Mesh;
   armR: THREE.Mesh;
+  pose: Pose = 'idle';
+  poseStart = 0;
   constructor(team: 0 | 1) {
     const s = VIEW.playerScale;
     const H = PLAYER_HEIGHT * s;
@@ -77,6 +109,7 @@ class PlayerMesh {
     const dark = new THREE.MeshLambertMaterial({ color: COLORS.teamDark[team] });
     const skin = new THREE.MeshLambertMaterial({ color: COLORS.skin });
     this.body = new THREE.Group();
+    this.body.rotation.order = 'YXZ'; // 向きを変えてから前後に傾ける
     const legH = H * 0.42;
     for (const sx of [-1, 1]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.17 * s, legH, 0.2 * s), dark);
@@ -120,7 +153,6 @@ export class Renderer {
   private arrow: THREE.Mesh;
   private players = new Map<number, PlayerMesh>();
   private marker: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number };
-  private camZ = 0;
   /** 視点。0=チーム0の後ろから、1=チーム1の後ろから */
   view: 0 | 1 = 0;
 
@@ -285,9 +317,26 @@ export class Renderer {
       const shadow = m.group.getObjectByName('shadow')!;
       const sc = Math.max(0.5, 1 - pv.y * 0.4);
       shadow.scale.set(sc, sc, sc);
-      const a = pv.armsUp ? Math.PI * 0.95 : 0.15;
-      m.armL.rotation.x = -a;
-      m.armR.rotation.x = -a;
+      const now = performance.now() / 1000;
+      if (pv.pose !== m.pose) {
+        m.pose = pv.pose;
+        m.poseStart = now;
+      }
+      let ps = POSES[pv.pose];
+      const from = BLEND_FROM[pv.pose];
+      if (from) {
+        // 振りかぶり→振り下ろし、立った姿勢→飛び込みを素早くつなぐ
+        const k = Math.min((now - m.poseStart) / SWING_TIME, 1);
+        const a = POSES[from];
+        const b = POSES[pv.pose];
+        const e = 1 - (1 - k) * (1 - k);
+        const mix = (key: keyof PoseValues) => a[key] + (b[key] - a[key]) * e;
+        ps = { lx: mix('lx'), rx: mix('rx'), lz: mix('lz'), rz: mix('rz'), lean: mix('lean'), twist: mix('twist') };
+      }
+      m.armL.rotation.set(ps.lx, 0, -ps.lz);
+      m.armR.rotation.set(ps.rx, 0, ps.rz);
+      m.body.rotation.x = ps.lean;
+      m.body.rotation.y += ps.twist;
     }
   }
 
@@ -351,14 +400,11 @@ export class Renderer {
     return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight, visible: v.z < 1 };
   }
 
-  /** serving：視点側のチームのサーブ中。サーバーが操作ボタンに隠れないようにカメラを後ろへ引く */
-  updateCamera(dt: number, focusZ: number, serving = false): void {
-    const k = 1 - Math.exp(-VIEW.followSmooth * dt);
+  /** カメラは固定（ボールを追うと見づらいため） */
+  updateCamera(): void {
     const dir = this.view === 0 ? 1 : -1;
-    const target = serving ? dir * VIEW.serveCamZ : focusZ * VIEW.followFactor;
-    this.camZ += (target - this.camZ) * k;
-    this.camera.position.set(0, VIEW.camHeight, this.camZ + dir * VIEW.camBack);
-    this.camera.lookAt(0, 0, this.camZ + dir * VIEW.lookAhead);
+    this.camera.position.set(0, VIEW.camHeight, dir * (VIEW.camZ + VIEW.camBack));
+    this.camera.lookAt(0, 0, dir * (VIEW.camZ + VIEW.lookAhead));
   }
 
   render(): void {

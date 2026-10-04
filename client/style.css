@@ -113,6 +113,7 @@ table.sets th, table.sets td { padding: 4px 12px; border-bottom: 1px solid var(-
 .judge.good { color: #6dff8f; }
 .judge.bad { color: #ff9b4a; }
 .judge.miss { color: #c9c9c9; }
+.judge .judge-note { display: block; font-size: 14px; color: #fff; text-align: center; letter-spacing: 0; }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 30% { transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -120%); } }
 .hud-banner {
   position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%) scale(.9); opacity: 0; transition: opacity .2s, transform .2s;
