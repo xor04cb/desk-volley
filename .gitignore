@@ -1,0 +1,26 @@
+# 依存パッケージ・ビルド成果物
+node_modules/
+dist/
+build/
+.vite/
+
+# 環境変数・秘密情報
+.env
+.env.*
+!.env.example
+
+# ログ
+*.log
+npm-debug.log*
+
+# OS・エディタ
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# Claude Code の個人設定
+CLAUDE.local.md
+.claude/settings.local.json
