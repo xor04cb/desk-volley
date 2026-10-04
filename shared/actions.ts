@@ -35,6 +35,7 @@ import {
   RECEIVE_SCATTER_MAX,
   RECEIVE_SCATTER_MIN,
   SERVE_AIM_LX,
+  SERVE_RECEIVE_APEX_BONUS,
   SERVE_APEX_FAST,
   SERVE_APEX_SLOW,
   SERVE_HIT_HEIGHT,
@@ -309,6 +310,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
       tx = t.x + off.x;
       tz = t.z + off.z;
       apex = lerp(RECEIVE_APEX_MIN, RECEIVE_APEX_MAX, rand(s.rng));
+      if (s.lastContactKind === 'serve') apex += SERVE_RECEIVE_APEX_BONUS; // サーブカットは高く上げる
       vel = solveByApex(from, tx, tz, apex);
       break;
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hitPoint, startJump, updateActors } from '../shared/actions.ts';
-import { TICK_RATE } from '../shared/constants.ts';
-import { playerAtPosition } from '../shared/court.ts';
+import { SERVE_RECEIVE_APEX_BONUS, TICK_RATE } from '../shared/constants.ts';
+import { judgeOf, playerAtPosition } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -100,6 +100,27 @@ describe('タイミング判定（フェーズ4）', () => {
     expect(s.lastContact?.judgment).toBe('GOOD');
     // 打球は上向きに飛び、まだ接地していない
     expect(s.landTick).toBe(-1);
+  });
+});
+
+describe('動作ごとの判定の違い', () => {
+  it('スパイクは判定幅が広い（JUDGE_SCALE）', () => {
+    expect(judgeOf(0.07, 'spike')).toBe('PERFECT');
+    expect(judgeOf(0.07, 'receive')).toBe('GOOD');
+    expect(judgeOf(0.17, 'spike')).toBe('GOOD');
+    expect(judgeOf(-0.3, 'spike')).toBe('BAD');
+    expect(judgeOf(0.3, 'receive')).toBe('MISS');
+  });
+
+  it('サーブカットは普通のレシーブより高く上がる', () => {
+    const apex = (served: boolean) => {
+      const s = createGame({ seed: 4 });
+      incoming(s, receiver);
+      if (served) s.lastContactKind = 'serve';
+      hitAt(s, 0, contactTick(s, receiver, 'receive'), 0, 20);
+      return s.lastContact!.apex;
+    };
+    expect(apex(true)).toBeCloseTo(apex(false) + SERVE_RECEIVE_APEX_BONUS, 5);
   });
 });
 

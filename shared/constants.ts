@@ -47,7 +47,10 @@ export const JUDGE_EFFECT = {
 /** 早めに離したときの猶予（秒）。この分だけ早くても同じ評価になる 【要調整】 */
 const EARLY_GRACE_SEC = 0.07;
 export const EARLY_GRACE: Partial<Record<ContactKind, number>> = { receive: EARLY_GRACE_SEC, toss: EARLY_GRACE_SEC };
-export const JUDGE_WINDOW_TICKS = Math.ceil((JUDGE.BAD + EARLY_GRACE_SEC) * TICK_RATE); // 判定を探す範囲
+/** 動作ごとの判定幅の倍率（1で上の表どおり）。スパイクは空中で合わせにくいので広げる 【要調整】 */
+export const JUDGE_SCALE: Partial<Record<ContactKind, number>> = { spike: 1.5 };
+const MAX_JUDGE_SCALE = Math.max(1, ...Object.values(JUDGE_SCALE));
+export const JUDGE_WINDOW_TICKS = Math.ceil(Math.max(JUDGE.BAD + EARLY_GRACE_SEC, JUDGE.BAD * MAX_JUDGE_SCALE) * TICK_RATE); // 判定を探す範囲
 
 // ---- 打点（選手の足元からの高さ）と届く距離 ----
 export const RECEIVE_HIT_HEIGHT = 0.85;
@@ -61,6 +64,7 @@ export const SPIKE_REACH = 1.0; // 手（ジャンプ中の最高到達点付近
 // ---- レシーブ ----
 export const RECEIVE_APEX_MIN = 3.6; // 最高点の高さ
 export const RECEIVE_APEX_MAX = 4.6;
+export const SERVE_RECEIVE_APEX_BONUS = 1.0; // サーブカットはこれだけ高く上げる 【要調整】
 export const RECEIVE_SCATTER_MAX = 3.2; // 溜め0・BAD時のぶれ半径(m) 【要調整】
 export const RECEIVE_SCATTER_MIN = 0.3; // 溜め最大・PERFECT時のぶれ半径
 export const RECEIVE_EASY_SPEED = 9; // これより速い打球はレシーブが乱れる 【要調整】
