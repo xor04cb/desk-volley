@@ -9,6 +9,18 @@ export interface PadState {
 
 const STICK_RADIUS = 52; // px
 
+/** ブラウザの拡大操作（ピンチ・ダブルタップ・長押しメニュー）を画面全体で止める */
+export function preventBrowserZoom(): void {
+  const stop = (e: Event) => e.preventDefault();
+  // iOS Safari は user-scalable=no を無視するので、ジェスチャーを直接止める
+  document.addEventListener('gesturestart', stop);
+  document.addEventListener('gesturechange', stop);
+  document.addEventListener('dblclick', stop);
+  document.addEventListener('contextmenu', stop);
+  document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventDefault(), { passive: false });
+  // ダブルタップでの拡大は CSS の touch-action で止めている
+}
+
 /** タッチ操作パッド */
 export class TouchPad {
   readonly el: HTMLDivElement;
@@ -85,6 +97,10 @@ export class TouchPad {
     this.button.addEventListener('pointerup', bend);
     this.button.addEventListener('pointercancel', bend);
     this.el.addEventListener('contextmenu', (e) => e.preventDefault());
+    // 長押しの拡大鏡・文字選択、スティックとボタンの2本指でのピンチ拡大を止める（ポインターイベントは届く）
+    const stop = (e: TouchEvent) => e.preventDefault();
+    this.el.addEventListener('touchstart', stop, { passive: false });
+    this.el.addEventListener('touchmove', stop, { passive: false });
   }
 
   private update(cx: number, cy: number): void {

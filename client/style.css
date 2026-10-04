@@ -8,7 +8,8 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
 }
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: #1b1410; color: var(--ink);
   font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
@@ -36,6 +37,7 @@ html, body {
 .menu {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: min(360px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto;
+  touch-action: pan-y; /* スクロールはできて、ダブルタップ・ピンチでの拡大はしない */
   background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 20px 18px;
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-align: center;
 }

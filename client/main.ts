@@ -3,7 +3,7 @@ import { DT } from '../shared/constants.ts';
 import { createGame, press, release, setStick, step } from '../shared/game.ts';
 import { DEFAULT_RULES, type GameEvent, type GameState, type Rules, type TeamId } from '../shared/types.ts';
 import { Hud, ACTION_LABEL } from './hud.ts';
-import { combine, Keyboard, KEYS_ANY, TouchPad, type PadState } from './input.ts';
+import { combine, Keyboard, KEYS_ANY, preventBrowserZoom, TouchPad, type PadState } from './input.ts';
 import { Renderer } from './renderer.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
 import { showMatchEnd, showPauseMenu, showSettings, showTitle } from './menus.ts';
@@ -13,6 +13,7 @@ import { startOnline } from './online.ts';
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLDivElement;
 const renderer = new Renderer(canvas);
+preventBrowserZoom();
 const NAMES: [string, string] = ['あなた', 'CPU'];
 let settings: Settings = loadSettings();
 
