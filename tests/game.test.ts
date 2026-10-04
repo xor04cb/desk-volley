@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitPoint, startJump } from '../shared/actions.ts';
+import { hitPoint, startJump, updateActors } from '../shared/actions.ts';
 import { TICK_RATE } from '../shared/constants.ts';
 import { playerAtPosition } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
@@ -250,6 +250,30 @@ describe('ツーアタックの誤操作防止', () => {
   });
   it('ボールを追いかけて走っている最中はトスになる', () => {
     expect(currentAction(setup(3), 0)).toBe('toss');
+  });
+});
+
+describe('レシーブの担当', () => {
+  /** 前衛右の選手を (lx=3, lz) に置き、その足元へ相手からボールを送る */
+  const setup = (lz: number) => {
+    const s = createGame({ seed: 5 });
+    const front = playerAtPosition(s, 0, 2);
+    const back = playerAtPosition(s, 0, 1); // 後衛右
+    front.x = 3;
+    front.z = lz;
+    back.x = 3;
+    back.z = 7;
+    incoming(s, front.id);
+    updateActors(s);
+    return { s, front, back };
+  };
+  it('前（アタックラインより手前）以外のボールは、前衛が近くても後衛がレシーブする', () => {
+    const { s, back } = setup(4.5);
+    expect(s.teams[0].controlled).toBe(back.id);
+  });
+  it('前のボールは近い前衛がレシーブする', () => {
+    const { s, front } = setup(2);
+    expect(s.teams[0].controlled).toBe(front.id);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   DIVE_SCATTER_MUL,
   FEINT_APEX_ABOVE_NET,
   FEINT_MAX_DIST,
+  FRONT_RECEIVE_DEPTH,
   G,
   JUDGE_EFFECT,
   JUDGE_WINDOW_TICKS,
@@ -580,11 +581,12 @@ export function travelTime(p: Player, x: number, z: number): number {
   return air + dist2(p.x, p.z, x, z) / PLAYER_SPEED;
 }
 
-export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number): Player {
+export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, backOnly = false): Player {
   let best: Player | null = null;
   let bt = Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.id === exclude) continue;
+    if (backOnly && isFrontRow(positionOf(s, p))) continue;
     const t = travelTime(p, x, z);
     if (t < bt) {
       bt = t;
@@ -625,8 +627,10 @@ export function updateActors(s: GameState): void {
         const ip = interceptPoint(s, T, TOSS_HIT_HEIGHT);
         if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
       } else {
+        // 相手からのボールは、前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛がレシーブする
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
-        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
+        const fromOpp = team.contactsLeft === 3;
+        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, fromOpp && toLocal(T, ip.x, ip.z).lz > FRONT_RECEIVE_DEPTH).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック
