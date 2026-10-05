@@ -43,7 +43,8 @@ import {
   SERVE_HIT_HEIGHT,
   SERVE_SCATTER_MAX,
   SERVE_SCATTER_MIN,
-  SERVE_TARGET_LZ,
+  SERVE_TARGET_LZ_FAST,
+  SERVE_TARGET_LZ_SLOW,
   SERVE_TOSS_HEIGHT,
   SET_TARGET,
   SPIKE_AIM_LX,
@@ -422,7 +423,8 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
       break;
     }
     case 'serve': {
-      const t = toWorld(T, clamp(pc.mx * SERVE_AIM_LX, -3.5, 3.5), -SERVE_TARGET_LZ);
+      // 溜めるほど低く速い球で深くを狙う（深くしないと低い球はネットに掛かる）
+      const t = toWorld(T, clamp(pc.mx * SERVE_AIM_LX, -3.5, 3.5), -lerp(SERVE_TARGET_LZ_SLOW, SERVE_TARGET_LZ_FAST, ce));
       scatter = lerp(SERVE_SCATTER_MIN, SERVE_SCATTER_MAX, pc.charge) * eff.scatter * 1.33;
       const off = randInCircle(s.rng, scatter);
       tx = t.x + off.x;

@@ -129,6 +129,7 @@
 - 床に落ちた後に離した場合は MISS（遅れて離したときの巻き戻しはしない）。レシーブは打点から30〜70msで床に落ちるため、遅れる側はほぼPERFECTの幅しかない
 - スパイク（空中での2回目）は判定幅を `JUDGE_SCALE`（仮に1.5倍：PERFECT ±75ms、GOOD ±180ms、BAD ±375ms）に広げる
 - カット（レシーブ）した選手は `RECEIVE_RECOVER_TICKS`（仮に0.4秒）動けない
+- サーブは溜めるほど低く速い球で深くを狙う（最高点 `SERVE_APEX_SLOW`→`SERVE_APEX_FAST`、深さ `SERVE_TARGET_LZ_SLOW`→`SERVE_TARGET_LZ_FAST`）。深くしないと低い球はネットに掛かるため
 - サーブカットは普通のレシーブより `SERVE_RECEIVE_APEX_BONUS`（仮に1m）高く上げる
 
 #### トスの向き【提案】

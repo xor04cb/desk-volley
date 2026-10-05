@@ -108,11 +108,13 @@ export const SERVE_TIME_LIMIT = 10; // 秒（仮）【要確認】
 export const SERVE_BEHIND_END = 1.0; // エンドラインからの距離
 export const SERVE_TOSS_HEIGHT = 1.6; // サーブトスで手元からどれだけ上がるか
 export const SERVE_HIT_HEIGHT = 2.7;
-export const SERVE_APEX_SLOW = 5.2; // 溜め0の最高点（遅い山なり）
-export const SERVE_APEX_FAST = 3.3; // 溜め最大の最高点（速い・低い）
+export const SERVE_APEX_SLOW = 4.4; // 溜め0の最高点（遅い山なり）【要調整】
+export const SERVE_APEX_FAST = 3.2; // 溜め最大の最高点（速い・低い）【要調整】
 export const SERVE_SCATTER_MIN = 0.6;
 export const SERVE_SCATTER_MAX = 2.6; // 溜めが大きいほどぶれも大きい（アウトのリスク）
-export const SERVE_TARGET_LZ = 6.0;
+// 狙う深さ（相手ネットから）。速い球は深く狙わないとネットに掛かる 【要調整】
+export const SERVE_TARGET_LZ_SLOW = 5.5;
+export const SERVE_TARGET_LZ_FAST = 7.5;
 export const SERVE_AIM_LX = 2.5;
 
 // ---- ブロック ----

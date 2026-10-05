@@ -5,7 +5,7 @@ import { judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
-import type { ContactKind, GameEvent, GameState, TeamId } from '../shared/types.ts';
+import type { ContactInfo, ContactKind, GameEvent, GameState, TeamId } from '../shared/types.ts';
 import { dist3, v3 } from '../shared/vec.ts';
 import { simulate } from './sim.ts';
 
@@ -477,10 +477,13 @@ describe('試合の進行', () => {
     const s = createGame({ seed: 1, rules: { serveTime: 3 } });
     for (let i = 0; i < 3 * 60 + 2; i++) step(s);
     expect(s.serveTossed).toBe(true);
-    for (let i = 0; i < 120; i++) step(s);
-    expect(s.lastContact?.kind).toBe('serve');
-    expect(s.lastContact?.charge).toBe(0);
-    expect(s.lastContact?.judgment).toBe('GOOD');
+    let serve: ContactInfo | null = null;
+    for (let i = 0; i < 120 && !serve; i++) {
+      step(s);
+      for (const e of s.events) if (e.type === 'contact' && e.info.kind === 'serve') serve = e.info;
+    }
+    expect(serve?.charge).toBe(0);
+    expect(serve?.judgment).toBe('GOOD');
   });
 });
 
