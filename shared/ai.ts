@@ -31,7 +31,22 @@ import {
   startDive,
   startJump,
 } from './actions.ts';
-import { FORMATION, isFrontRow, judgeOf, positionOf, toLocal, toWorld } from './court.ts';
+import {
+  COVER_SPOTS,
+  DEFENSE_SPOTS,
+  FORMATION,
+  RECEIVE_HIDDEN,
+  RECEIVE_SPOTS,
+  SETTER_SPOT,
+  isFrontRow,
+  judgeOf,
+  positionOf,
+  roleOf,
+  setterOf,
+  switchedPos,
+  toLocal,
+  toWorld,
+} from './court.ts';
 import { rand, randNormal, randRange } from './prng.ts';
 import type { ActionKind, ContactKind, GameState, Player, TeamId } from './types.ts';
 import { clamp, dist2, lerp } from './vec.ts';
@@ -46,11 +61,38 @@ export interface Target {
   z: number;
 }
 
-/** 操作していない選手の定位置 */
+type Spot = readonly [number, number];
+
+/**
+ * 操作していない選手の立ち位置（陣形）。
+ * サーブ前：サーブ側はローテーションの位置、レシーブ側はサーブレシーブの陣形。
+ * ラリー中（サーブの後）：得意な位置へ入れ替わり、攻撃（助走・カバー）と守備（相手の攻撃の向きに合わせる）の陣形
+ */
 export function formationSpot(s: GameState, p: Player): Target {
   const T = p.team;
+  const at = (sp: Spot) => toWorld(T, sp[0], sp[1]);
+  if (s.rules.system === 'none') return legacySpot(s, p);
+  if (s.phase === 'serve') return at(s.servingTeam === T ? FORMATION.base[positionOf(s, p)] : receiveSpot(s, p));
+  if (s.phase !== 'rally') return { x: p.x, z: p.z };
+  const pos = switchedPos(s, p);
+  if (ballComingTo(s, T)) {
+    const team = s.teams[T];
+    // 攻撃：トスを上げたら、打つ人以外はスパイカーの後ろをカバー
+    if (s.lastTouchTeam === T && s.lastContactKind === 'toss' && s.tossTarget >= 0 && s.tossTarget !== p.id) return coverSpot(s, p);
+    // セッターは（自分が1本目を触っていなければ）トスを上げる位置へ走り込む
+    const setter = setterOf(s, T);
+    if (setter?.id === p.id && team.contactsLeft >= 2 && !(s.lastTouchTeam === T && team.lastToucher === p.id)) return at(SETTER_SPOT);
+    return at(FORMATION.offense[pos]);
+  }
+  if (!opponentAttacking(s, T)) return at(FORMATION.defense[pos]);
+  return defenseSpot(s, p, pos);
+}
+
+/** ローテシステム「なし」：役割なし、ローテーションの位置のまま（陣形を入れる前の動き） */
+function legacySpot(s: GameState, p: Player): Target {
+  const T = p.team;
   const pos = positionOf(s, p);
-  let spot: readonly [number, number];
+  let spot: Spot;
   if (s.phase === 'serve') {
     spot = s.servingTeam === T ? FORMATION.base[pos] : FORMATION.receive[pos];
   } else if (s.phase !== 'rally') {
@@ -63,6 +105,110 @@ export function formationSpot(s: GameState, p: Player): Target {
     if (opponentAttacking(s, T) && isFrontRow(pos) && s.teams[T].controlled !== p.id) spot = [spot[0], 3.0];
   }
   return toWorld(T, spot[0], spot[1]);
+}
+
+/** サーブレシーブの陣形での立ち位置（役割があるとき） */
+function receiveSpot(s: GameState, p: Player): Spot {
+  const T = p.team;
+  const kind = s.rules.receive;
+  const setter = setterOf(s, T);
+  const hidden = (q: Player): keyof typeof RECEIVE_HIDDEN | null => {
+    const front = isFrontRow(positionOf(s, q));
+    const role = roleOf(s, q);
+    if (q.id === setter?.id) return front ? 'setterFront' : 'setterBack';
+    if (kind !== 'W' && role === 'MB' && front) return 'mbFront';
+    if (kind === 'three' && (role === 'OP' || role === 'S')) return front ? 'opFront' : 'opBack';
+    return null;
+  };
+  const h = hidden(p);
+  if (h) return RECEIVE_HIDDEN[h];
+  // 受ける人を、元の位置（ローテーション）から動く距離の合計が最小になるように割り当てる
+  const passers = s.players.filter((q) => q.team === T && !hidden(q));
+  const spots = RECEIVE_SPOTS[kind];
+  const assign = bestAssignment(
+    passers.map((q) => FORMATION.base[positionOf(s, q)]),
+    spots,
+  );
+  return spots[assign[passers.indexOf(p)]] ?? FORMATION.receive[positionOf(s, p)];
+}
+
+/** 相手が攻撃してくるときの守備位置。攻撃の来る側（自コートの左右）に合わせて反転する */
+function defenseSpot(s: GameState, p: Player, pos: number): Target {
+  const T = p.team;
+  const ax = attackX(s, T);
+  const alx = toLocal(T, ax, 0).lx;
+  const sg = alx > 1.5 ? 1 : alx < -1.5 ? -1 : 0;
+  const table = DEFENSE_SPOTS[s.rules.defense][sg === 0 ? 'center' : 'side'];
+  // 左から来るときは、右から来るときの位置を左右反転して使う（ポジション 2↔4、1↔5）
+  const mirrored = sg < 0 ? ({ 2: 4, 4: 2, 1: 5, 5: 1 } as Record<number, number>)[pos] ?? pos : pos;
+  const sp = table[mirrored];
+  if (sp === undefined || sp === null) {
+    // ブロックに入る：攻撃側の前衛は打点の正面、センターはその内側に並ぶ
+    const bx = clamp(alx - (pos === 3 && sg !== 0 ? sg * 0.8 : 0), -4.2, 4.2);
+    return toWorld(T, bx, PLAYER_MIN_NET_DIST + 0.25);
+  }
+  return toWorld(T, sg < 0 ? -sp[0] : sp[0], sp[1]);
+}
+
+/** 相手が打ってくる位置（ワールドの x）。トスの相手がいればその選手、なければ落下予測 */
+function attackX(s: GameState, T: TeamId): number {
+  const opp = 1 - T;
+  if (s.tossTarget >= 0 && s.players[s.tossTarget].team === opp) return s.players[s.tossTarget].x;
+  return s.predLandTick >= 0 ? s.predLandX : s.ball.pos.x;
+}
+
+/** スパイカーの後ろのカバー。打つ人以外を、近い順にカバーの位置へ割り当てる */
+function coverSpot(s: GameState, p: Player): Target {
+  const T = p.team;
+  const hitter = s.players[s.tossTarget];
+  const ip = interceptPoint(s, T, STANDING_REACH + AI_JUMP_H);
+  const h = toLocal(T, ip ? ip.x : hitter.x, ip ? ip.z : hitter.z);
+  const others = s.players.filter((q) => q.team === T && q.id !== hitter.id && q.id !== s.teams[T].controlled);
+  // 大事な順（近い3人→遠い2人）に、人数分だけ使う
+  const spots: Spot[] = COVER_SPOTS.slice(0, others.length).map(([dx, dz]) => [clamp(h.lx + dx, -4.4, 4.4), clamp(h.lz + dz, 1.0, 8.6)]);
+  const assign = bestAssignment(
+    others.map((q) => {
+      const l = toLocal(T, q.x, q.z);
+      return [l.lx, l.lz] as Spot;
+    }),
+    spots,
+  );
+  const k = assign[others.indexOf(p)];
+  const sp = k === undefined || k < 0 ? FORMATION.offense[switchedPos(s, p)] : spots[k];
+  return toWorld(T, sp[0], sp[1]);
+}
+
+/** from[i] を spots のどれかに割り当てる（重複なし）。移動距離の2乗の合計が最小。spots が足りなければ -1 */
+function bestAssignment(from: Spot[], spots: Spot[]): number[] {
+  const n = from.length;
+  let best: number[] = new Array(n).fill(-1);
+  let bc = Infinity;
+  const cur: number[] = [];
+  const used = new Array(spots.length).fill(false);
+  const rec = (i: number, cost: number) => {
+    if (cost >= bc) return;
+    if (i === n) {
+      bc = cost;
+      best = cur.slice();
+      return;
+    }
+    let any = false;
+    for (let k = 0; k < spots.length; k++) {
+      if (used[k]) continue;
+      any = true;
+      used[k] = true;
+      cur[i] = k;
+      const d = (from[i][0] - spots[k][0]) ** 2 + (from[i][1] - spots[k][1]) ** 2;
+      rec(i + 1, cost + d);
+      used[k] = false;
+    }
+    if (!any) {
+      cur[i] = -1; // 割り当てる位置が残っていない
+      rec(i + 1, cost);
+    }
+  };
+  rec(0, 0);
+  return best;
 }
 
 /** CPUのジャンプ・打球判断。actor（次に動く選手）の目標地点を返す */

@@ -3,7 +3,7 @@
 import { PRACTICE, RECEIVE_HIT_HEIGHT, SET_TARGET, TICK_RATE, TOSS_HIT_HEIGHT, TOSS_TARGET_LX, TOSS_TARGET_LZ } from './constants.ts';
 import { applyContact, ballAt, ballComingTo, computePath, contactDist, interceptPoint, opponentAttacking, reachOf, updateActors } from './actions.ts';
 import type { Target } from './ai.ts';
-import { FORMATION, isFrontRow, playerAtPosition, positionOf, toWorld } from './court.ts';
+import { FORMATION, isFrontRow, playerAtPosition, positionOf, switchedPos, toWorld } from './court.ts';
 import { launch, solveByApex } from './physics.ts';
 import { rand } from './prng.ts';
 import type { GameState, Player, PracticeKind, TeamId, TossZone } from './types.ts';
@@ -24,9 +24,8 @@ function attackerFor(s: GameState, T: TeamId, zone: TossZone): Player {
   let bd = Infinity;
   for (const p of s.players) {
     if (p.team !== T) continue;
-    const pos = positionOf(s, p);
-    if (!isFrontRow(pos)) continue;
-    const d = Math.abs(FORMATION.offense[pos][0] - TOSS_TARGET_LX[zone]);
+    if (!isFrontRow(positionOf(s, p))) continue;
+    const d = Math.abs(FORMATION.offense[switchedPos(s, p)][0] - TOSS_TARGET_LX[zone]);
     if (d < bd) {
       bd = d;
       best = p;
@@ -35,10 +34,11 @@ function attackerFor(s: GameState, T: TeamId, zone: TossZone): Player {
   return best!;
 }
 
+/** ラリーの途中から始めるので、入れ替わった後のポジションで並べる */
 function placeTeam(s: GameState, T: TeamId, f: keyof typeof FORMATION): void {
   for (const p of s.players) {
     if (p.team !== T) continue;
-    const [lx, lz] = FORMATION[f][positionOf(s, p)];
+    const [lx, lz] = FORMATION[f][switchedPos(s, p)];
     const w = toWorld(T, lx, lz);
     p.x = w.x;
     p.z = w.z;

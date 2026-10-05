@@ -86,9 +86,18 @@ export function showSettings(ui: HTMLElement, rules: Rules, done: (r: Rules) => 
   choice(p, 'デュース', r.deuce, [[true, 'あり'], [false, 'なし']], (v) => (r.deuce = v));
   choice(p, 'フェイント', r.feint, [[true, 'ON'], [false, 'OFF']], (v) => (r.feint = v));
   stepper(p, 'サーブ制限時間', r.serveTime, 3, 30, (v) => (r.serveTime = v), '秒');
+  const h3 = document.createElement('h3');
+  h3.textContent = '陣形（両チーム共通）';
+  p.appendChild(h3);
+  choice(p, 'ローテシステム', r.system, [['5-1', '5-1'], ['4-2', '4-2'], ['6-2', '6-2'], ['none', 'なし']], (v) => (r.system = v));
+  choice(p, 'サーブレシーブ', r.receive, [['W', 'W型5人'], ['four', '4人'], ['three', '3人']], (v) => (r.receive = v));
+  choice(p, '守備', r.defense, [['perimeter', 'ペリメーター'], ['rotation', 'ローテーション']], (v) => (r.defense = v));
   const note = document.createElement('p');
   note.className = 'help';
-  note.textContent = 'セット数3は2セット先取、5は3セット先取。最終セットの点数はセット数3・5のときに使います。人数は6人です。';
+  note.textContent =
+    'セット数3は2セット先取、5は3セット先取。最終セットの点数はセット数3・5のときに使います。人数は6人です。' +
+    'ローテシステム：S=セッター、OH=アウトサイド、MB=ミドル、OP=オポジット。サーブの後は得意な位置へ入れ替わります。' +
+    '「なし」は役割なし（ローテーションの位置のまま）で、サーブレシーブ・守備の選択は使いません。';
   p.appendChild(note);
   button(p, '決定', () => done(r), 'btn wide primary');
 }

@@ -1,5 +1,6 @@
 // 状態を画面に描く処理（ローカル対戦とオンライン対戦で共通）
 import { chargeOf, tossAimTarget } from '../shared/actions.ts';
+import { roleOf } from '../shared/court.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
 import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
 import type { Hud } from './hud.ts';
@@ -46,7 +47,8 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
     const timing = s.phase === 'rally' || s.phase === 'serve' ? timeToContact(s, T) : -1;
     r.setMarker({ player: p.id, name: p.name, charge, timing }, p);
     const sp = r.project(p.x, 0, p.z);
-    hud.setNameTag(sp.visible ? p.name : null, sp.x, sp.y);
+    const role = roleOf(s, p);
+    hud.setNameTag(sp.visible ? (role ? `${p.name} ${role}` : p.name) : null, sp.x, sp.y);
   }
   r.updateCamera();
   r.render();

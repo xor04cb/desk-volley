@@ -11,7 +11,7 @@ import {
   TOSS_HIT_HEIGHT,
   TOSS_TARGET_LZ,
 } from '../shared/constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, toWorld } from '../shared/court.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, switchedPos, toWorld } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -452,7 +452,8 @@ describe('トスの向き', () => {
     setStick(s, 0, mx, 0);
     return { s, setter };
   };
-  const posOf = (s: GameState, id: number) => positionOf(s, s.players[id]);
+  // サーブの後は得意な位置へ入れ替わるので、入れ替わった後の位置（4=レフト、3=センター、2=ライト）で見る
+  const posOf = (s: GameState, id: number) => switchedPos(s, s.players[id]);
   it('打点の近くでは、スティックの左右でレフト・センター・ライトを選べる', () => {
     expect(posOf(setup(0, -1).s, tossAimTarget(setup(0, -1).s, 0).id)).toBe(4);
     expect(posOf(setup(0, 0).s, tossAimTarget(setup(0, 0).s, 0).id)).toBe(3);

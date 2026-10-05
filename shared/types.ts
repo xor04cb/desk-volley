@@ -16,7 +16,20 @@ export interface Rules {
   deuce: boolean;
   feint: boolean;
   serveTime: number; // 秒
+  /** ローテシステム（none=役割なし、ローテーションの位置のまま） */
+  system: RotationSystem;
+  /** サーブレシーブの陣形 */
+  receive: ReceiveFormation;
+  /** 守備の陣形 */
+  defense: DefenseFormation;
 }
+
+export type RotationSystem = 'none' | '5-1' | '4-2' | '6-2';
+/** W=5人、four=4人、three=3人で受ける */
+export type ReceiveFormation = 'W' | 'four' | 'three';
+export type DefenseFormation = 'perimeter' | 'rotation';
+/** 役割：セッター、アウトサイド、ミドル、オポジット */
+export type Role = 'S' | 'OH' | 'MB' | 'OP';
 
 export const DEFAULT_RULES: Rules = {
   pointsPerSet: 25,
@@ -25,6 +38,9 @@ export const DEFAULT_RULES: Rules = {
   deuce: true,
   feint: true,
   serveTime: 10,
+  system: '5-1',
+  receive: 'W',
+  defense: 'perimeter',
 };
 
 export interface Player {

@@ -43,6 +43,7 @@ import {
   SERVE_HIT_HEIGHT,
   SERVE_SCATTER_MAX,
   SERVE_SCATTER_MIN,
+  SETTER_PREFER_SEC,
   SIDE_ATTACK_MIN_X,
   STRAIGHT_FEINT_MAX_DX,
   SERVE_TARGET_LZ_FAST,
@@ -71,7 +72,7 @@ import {
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
 } from './constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, toLocal, toWorld } from './court.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, setterOf, switchedPos, toLocal, toWorld } from './court.ts';
 import { launch, predict, sideOf, solveByApex, solveBySpeed, stepBall, type BallEvent } from './physics.ts';
 import { rand, randInCircle, randRange } from './prng.ts';
 import type { ActionKind, ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
@@ -495,7 +496,7 @@ export function chooseAttacker(s: GameState, team: TeamId, tosser: Player, mx: n
   let best = cands[0];
   let bd = Infinity;
   for (const q of cands) {
-    const d = Math.abs(FORMATION.offense[positionOf(s, q)][0] - want);
+    const d = Math.abs(FORMATION.offense[switchedPos(s, q)][0] - want); // 入れ替わった後の助走位置で選ぶ
     if (d < bd) {
       bd = d;
       best = q;
@@ -521,7 +522,7 @@ export function nearTossPoint(s: GameState, team: TeamId): boolean {
 }
 
 export function attackZone(s: GameState, p: Player): 'left' | 'center' | 'right' {
-  const pos = positionOf(s, p);
+  const pos = switchedPos(s, p);
   if (pos === 4 || pos === 5) return 'left';
   if (pos === 2 || pos === 1) return 'right';
   return 'center';
@@ -732,9 +733,14 @@ export function updateActors(s: GameState): void {
       if (s.lastTouchTeam === T && s.lastContactKind === 'toss' && s.tossTarget >= 0) {
         team.controlled = s.tossTarget;
       } else if (s.lastTouchTeam === T && team.contactsLeft === 2) {
-        // レシーブ後 → セッター（トスの打点に最も早く着ける選手）
+        // レシーブ後 → セッター。役割があればセッターが（大きく遅れなければ）上げる。なければ最も早く着ける選手
         const ip = interceptPoint(s, T, TOSS_HIT_HEIGHT);
-        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
+        if (ip) {
+          const fast = fastestTo(s, T, ip.x, ip.z, doubleBan);
+          const setter = setterOf(s, T);
+          const useSetter = setter && setter.id !== doubleBan && travelTime(setter, ip.x, ip.z) <= travelTime(fast, ip.x, ip.z) + SETTER_PREFER_SEC;
+          team.controlled = useSetter ? setter.id : fast.id;
+        }
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
         // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛。

@@ -43,9 +43,9 @@ npx tsc --noEmit # 型チェック
 shared/   ゲームロジック（描画・通信に依存しない）
   constants.ts  調整用の定数すべて（【要確認】【要調整】は仮の値）
   physics.ts    ボールの放物線・ネット・床、初速の逆算、軌道予測
-  court.ts      座標変換（チームから見た座標 lx/lz）、ポジション、フォーメーション、判定の閾値
+  court.ts      座標変換（チームから見た座標 lx/lz）、ポジション、役割（5-1など）、陣形の表、判定の閾値
   actions.ts    打球・判定（巻き戻しあり）・ジャンプ・ブロック・操作選手の自動切り替え
-  ai.ts         CPUの位置取りと打球
+  ai.ts         陣形での位置取り（formationSpot）とCPUの打球
   game.ts       1tickの進行、入力（press/release/setStick）、得点・セット
   practice.ts   練習モード（1本ごとに状況を作り直す、自動トス）
   types.ts      状態の型、ルールの既定値

@@ -80,6 +80,8 @@ export const SET_TARGET = { lx: 0.6, lz: 1.2 }; // セッターへの返球目�
 // ---- トス ----
 // ツーアタックは、ボールを打てる位置の近くにいるときだけ。走って追いかけている最中はトスになる（誤操作防止）
 export const TWO_ATTACK_MAX_DIST = 1.2; // m 【要調整】
+// 2本目はセッターが上げる。ほかの選手よりこの秒数以上遅れるときだけ、ほかの選手が上げる 【要調整】
+export const SETTER_PREFER_SEC = 0.5;
 // トスの向き（レフト・センター・ライト）は、打点からこの距離以内にいるときだけスティックの左右で選ぶ 【要調整】
 export const TOSS_AIM_MAX_DIST = 1.2; // m
 export const TOSS_APEX_MIN = 3.6; // 【要調整】
