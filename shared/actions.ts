@@ -654,12 +654,12 @@ export function travelTime(p: Player, x: number, z: number): number {
   return air + dist2(p.x, p.z, x, z) / PLAYER_SPEED;
 }
 
-export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, backOnly = false): Player {
+export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, row: 'all' | 'front' | 'back' = 'all'): Player {
   let best: Player | null = null;
   let bt = Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.id === exclude) continue;
-    if (backOnly && isFrontRow(positionOf(s, p))) continue;
+    if (row !== 'all' && isFrontRow(positionOf(s, p)) !== (row === 'front')) continue;
     const t = travelTime(p, x, z);
     if (t < bt) {
       bt = t;
@@ -700,11 +700,17 @@ export function updateActors(s: GameState): void {
         const ip = interceptPoint(s, T, TOSS_HIT_HEIGHT);
         if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
       } else {
-        // 相手からのボールは、前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛がレシーブする。フェイントは前に落ちても後衛が拾う
+        // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
+        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛、相手のフェイントも後衛、自チームのブロック後に前へ落ちるボールは近い前衛
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
-        const fromOpp = team.contactsLeft === 3;
-        const backOnly = fromOpp && (s.lastContactKind === 'feint' || (ip !== null && toLocal(T, ip.x, ip.z).lz > FRONT_RECEIVE_DEPTH));
-        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, backOnly).id;
+        let row: 'all' | 'front' | 'back' = 'all';
+        if (ip && team.contactsLeft === 3) {
+          const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
+          const ownBlock = s.lastTouchTeam === T && s.lastContactKind === 'block';
+          if (!front || s.lastContactKind === 'feint') row = 'back';
+          else if (ownBlock) row = 'front';
+        }
+        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, row).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

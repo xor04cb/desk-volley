@@ -385,6 +385,30 @@ describe('レシーブの担当', () => {
     const { s, front } = setup(2);
     expect(s.teams[0].controlled).toBe(front.id);
   });
+  /** ネット際 (0, 1.5) に落ちるボール。後衛中央の方が近く、前衛中央は少し遠い */
+  const nearNet = (ownBlock: boolean) => {
+    const s = createGame({ seed: 5 });
+    const back = playerAtPosition(s, 0, 6);
+    const front = playerAtPosition(s, 0, 3);
+    back.x = 0;
+    back.z = 1.5;
+    incoming(s, back.id, { lastTouch: ownBlock ? 0 : 1 });
+    if (ownBlock) s.lastContactKind = 'block';
+    back.x = 0.5;
+    back.z = 2.3;
+    front.x = 1.8;
+    front.z = 1.5;
+    updateActors(s);
+    return { s, back, front };
+  };
+  it('自チームのブロックで手前に落ちてくるボールは、後衛の方が近くても前衛が取る', () => {
+    const { s, front } = nearNet(true);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('相手から来た手前のボールは、今までどおり一番早く着ける選手', () => {
+    const { s, back } = nearNet(false);
+    expect(s.teams[0].controlled).toBe(back.id);
+  });
   it('フェイントは前に落ちても後衛が拾う', () => {
     const { s, back } = setup(2, true);
     expect(s.teams[0].controlled).toBe(back.id);

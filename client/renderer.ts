@@ -32,9 +32,12 @@ const COLORS = {
   net: 0x111111,
   netTop: 0xf4f4f4,
   post: 0xcccccc,
-  // ボールのパネル（3本1組の外側の色。中央は白）。既存製品と被らない配色
-  ballPanels: ['#f2b51d', '#1f5fa8', '#f2b51d'],
-  ballWhite: '#f6f3ea',
+  // ボールのパネル（3本1組を [外側, 中央] の色で塗る。面の組ごとに入れ替える）。黄と青の定番配色（ロゴは入れない）
+  ballPanels: [
+    ['#f5c400', '#0b4aa2'],
+    ['#0b4aa2', '#f5c400'],
+    ['#f5c400', '#0b4aa2'],
+  ],
   ballSeam: 'rgba(40, 32, 24, 0.55)',
   landing: 0xff5a2a,
   team: [0x2f6fdb, 0xd94141],
@@ -105,17 +108,17 @@ function makeVolleyball(radius: number): THREE.Mesh {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  const mats = COLORS.ballPanels.map((c) => new THREE.MeshStandardMaterial({ map: panelTexture(c), roughness: 0.55, metalness: 0 }));
+  const mats = COLORS.ballPanels.map(([o, c]) => new THREE.MeshStandardMaterial({ map: panelTexture(o, c), roughness: 0.55, metalness: 0 }));
   return new THREE.Mesh(geo, mats);
 }
 
-/** 1面ぶんのテクスチャ：色・白・色の3本のパネルと縫い目 */
-function panelTexture(color: string): THREE.CanvasTexture {
+/** 1面ぶんのテクスチャ：外側・中央・外側の3本のパネルと縫い目 */
+function panelTexture(outer: string, center: string): THREE.CanvasTexture {
   const S = 128;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const g = cv.getContext('2d')!;
-  const bands = [color, COLORS.ballWhite, color];
+  const bands = [outer, center, outer];
   for (let k = 0; k < 3; k++) {
     g.fillStyle = bands[k];
     g.fillRect(0, (k * S) / 3, S, S / 3 + 1);
