@@ -504,10 +504,14 @@ export function chooseAttacker(s: GameState, team: TeamId, tosser: Player, mx: n
  */
 export function tossAimTarget(s: GameState, team: TeamId): Player {
   const t = s.teams[team];
-  const p = s.players[t.controlled];
+  return chooseAttacker(s, team, s.players[t.controlled], nearTossPoint(s, team) ? t.mx : 0);
+}
+
+/** 操作選手がトスの打点の近くにいるか。近くでボタンを押している間は、スティックで動かず向きを選ぶ */
+export function nearTossPoint(s: GameState, team: TeamId): boolean {
+  const p = s.players[s.teams[team].controlled];
   const ip = interceptPoint(s, team, TOSS_HIT_HEIGHT);
-  const near = ip !== null && Math.hypot(ip.x - p.x, ip.z - p.z) <= TOSS_AIM_MAX_DIST;
-  return chooseAttacker(s, team, p, near ? t.mx : 0);
+  return ip !== null && Math.hypot(ip.x - p.x, ip.z - p.z) <= TOSS_AIM_MAX_DIST;
 }
 
 export function attackZone(s: GameState, p: Player): 'left' | 'center' | 'right' {

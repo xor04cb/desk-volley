@@ -36,6 +36,7 @@ import {
   serveToss,
   startDive,
   startJump,
+  nearTossPoint,
   stepJumps,
   tossAimTarget,
   updateActors,
@@ -365,7 +366,12 @@ function movePlayers(s: GameState): void {
       continue;
     }
     if (s.phase === 'serve' && !s.serveTossed) continue; // サーブ前はその場で待つ
-    if (isActor && team.human) {
+    // ボールの下でトスのボタンを押している間は、スティックはトスの向きを選ぶだけで動かない
+    const aimingToss = isActor && team.human && team.pressTick >= 0 && currentAction(s, p.team) === 'toss' && nearTossPoint(s, p.team);
+    if (aimingToss) {
+      p.vx = 0;
+      p.vz = 0;
+    } else if (isActor && team.human) {
       const w = toWorld(p.team, team.mx, -team.mf);
       const nx = p.x + w.x * PLAYER_SPEED * DT;
       const nz = p.z + w.z * PLAYER_SPEED * DT;

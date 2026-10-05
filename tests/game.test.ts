@@ -345,10 +345,18 @@ describe('トスの向き', () => {
     const { s } = setup(3, -1);
     expect(posOf(s, tossAimTarget(s, 0).id)).toBe(3);
   });
-  it('離すと、印を出していた相手にトスが上がる', () => {
+  it('押している間スティックを倒し続けても動かず、印を出していた相手にトスが上がる', () => {
     const { s, setter } = setup(0, 0);
     const t = contactTick(s, setter.id, 'toss');
-    hitAt(s, 0, t, 0, 20, [-1, 0]); // 離す瞬間に左へ
+    while (s.tick < t - 20) step(s);
+    press(s, 0);
+    setStick(s, 0, -1, 0); // 押したまま左へ倒し続ける
+    const x0 = setter.x;
+    while (s.tick < t) step(s);
+    expect(setter.x).toBeCloseTo(x0, 6); // 歩いて打点から離れない
+    expect(posOf(s, tossAimTarget(s, 0).id)).toBe(4);
+    release(s, 0);
+    for (let i = 0; i < 10; i++) step(s);
     expect(s.lastContact?.kind).toBe('toss');
     expect(posOf(s, s.tossTarget)).toBe(4);
   });
