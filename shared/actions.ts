@@ -10,6 +10,7 @@ import {
   BLOCK_JUMP_MIN,
   BLOCK_RESTITUTION,
   CHARGE_MAX,
+  DIVE_FRAME_RADIUS,
   DIVE_HAND_OFFSET,
   DIVE_REACH,
   DIVE_REACH_FAST,
@@ -206,8 +207,41 @@ export function judgeRelease(s: GameState, p: Player, kind: ContactKind, release
   return { judgment: judgeOf(dt, kind), tStar: bestT, dt, dive: best > reachOf(kind, ballSpeed(s)) };
 }
 
-/** フライング：打点のボールに向かって飛び込む。起き上がるまで動けない */
-export function startDive(s: GameState, p: Player, ballTick: number): void {
+/**
+ * 人のフライング：dir（ワールド座標の向き）へ飛び込む。手が落下予測円に入らなければ上がらない。
+ * 飛び込む長さは、その向きで円に最も近づく所まで（最大でフライングの届く距離）。
+ */
+export function aimDive(s: GameState, p: Player, dir: { x: number; z: number }): { x: number; z: number; ok: boolean } {
+  const n = Math.hypot(dir.x, dir.z) || 1;
+  const ux = dir.x / n;
+  const uz = dir.z / n;
+  const lx = s.predLandTick >= 0 ? s.predLandX : s.ball.pos.x;
+  const lz = s.predLandTick >= 0 ? s.predLandZ : s.ball.pos.z;
+  const reach = maxReachOf('receive', ballSpeed(s));
+  const along = clamp((lx - p.x) * ux + (lz - p.z) * uz, 0, reach);
+  const hx = p.x + ux * along;
+  const hz = p.z + uz * along;
+  const back = Math.min(DIVE_HAND_OFFSET, along); // 体は手より少し手前
+  return { x: hx - ux * back, z: hz - uz * back, ok: dist2(hx, hz, lx, lz) <= DIVE_FRAME_RADIUS };
+}
+
+/** フライング：打点のボールに向かって（body を渡せばその位置へ）飛び込む。起き上がるまで動けない */
+export function startDive(s: GameState, p: Player, ballTick: number, body?: { x: number; z: number }): void {
+  if (body) {
+    const dx = body.x - p.x;
+    const dz = body.z - p.z;
+    const d = Math.hypot(dx, dz);
+    p.diveTick = s.tick;
+    p.diveX = body.x;
+    p.diveZ = body.z;
+    p.vx = 0;
+    p.vz = 0;
+    if (d > 1e-6) {
+      p.fx = dx / d;
+      p.fz = dz / d;
+    }
+    return;
+  }
   const b = ballAt(s, ballTick) ?? s.ball.pos;
   const dx = p.x - b.x;
   const dz = p.z - b.z;

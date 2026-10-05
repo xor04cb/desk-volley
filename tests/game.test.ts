@@ -43,7 +43,7 @@ function contactTick(s: GameState, id: number, kind: ContactKind): number {
 }
 
 /** 目標tickの holdTicks 前に押し、offsetTicks ずらして離す */
-function hitAt(s: GameState, team: TeamId, target: number, offsetTicks: number, holdTicks: number): GameEvent[] {
+function hitAt(s: GameState, team: TeamId, target: number, offsetTicks: number, holdTicks: number, stick?: [number, number]): GameEvent[] {
   const ev: GameEvent[] = [];
   const releaseAt = target + offsetTicks;
   while (s.tick < releaseAt - holdTicks) {
@@ -56,7 +56,9 @@ function hitAt(s: GameState, team: TeamId, target: number, offsetTicks: number, 
     ev.push(...s.events);
   }
   s.events.length = 0;
+  if (stick) setStick(s, team, stick[0], stick[1]); // 離す瞬間だけ倒す（移動はしない）
   release(s, team);
+  if (stick) setStick(s, team, 0, 0);
   ev.push(...s.events);
   for (let i = 0; i < 30; i++) {
     step(s);
@@ -250,11 +252,11 @@ describe('フライング', () => {
     s.players[receiver].x += shiftX;
     return { s, t };
   };
-  it('普通には届かないボールは、飛び込んで上げる（返球は乱れる）', () => {
+  it('普通には届かないボールは、スティックの向きへ飛び込んで上げる（返球は乱れる）', () => {
     const { s, t } = setup(2.0);
     const normal = setup(0);
     hitAt(normal.s, 0, normal.t, 0, 20);
-    const ev = hitAt(s, 0, t, 0, 20);
+    const ev = hitAt(s, 0, t, 0, 20, [-1, 0]); // ボールのある左へ
     const j = ev.find((e) => e.type === 'judge');
     expect(j && j.type === 'judge' && j.dive).toBe(true);
     expect(s.lastContact?.dive).toBe(true);
@@ -267,6 +269,16 @@ describe('フライング', () => {
     for (let i = 0; i < 10; i++) step(s);
     expect(p.x).toBeCloseTo(x, 6);
     expect(p.z).toBeCloseTo(z, 6);
+  });
+  it('向きを間違えると、飛び込んでも手が落下予測円に入らず上がらない', () => {
+    for (const stick of [[1, 0], [0, 1], [0, 0]] as [number, number][]) {
+      const { s, t } = setup(2.0);
+      const ev = hitAt(s, 0, t, 0, 20, stick);
+      const j = ev.find((e) => e.type === 'judge');
+      expect(j && j.type === 'judge' ? j.judgment : null).toBe('MISS');
+      expect(ev.some((e) => e.type === 'contact')).toBe(false);
+      expect(s.players[receiver].diveTick).toBeGreaterThanOrEqual(0); // 飛び込みはする
+    }
   });
   it('フライングでも届かないボールは空振り', () => {
     const { s, t } = setup(4.0);

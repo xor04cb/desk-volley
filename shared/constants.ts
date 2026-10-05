@@ -123,6 +123,8 @@ export const DIVE_SCATTER_MUL = 1.6; // 返球のぶれの倍率（フライン�
 export const DIVE_SLIDE_TICKS = 15; // 飛び込む動きの長さ（0.25秒）
 export const DIVE_RECOVER_TICKS = 60; // 飛び込んでから起き上がるまで（1秒）。この間は動けない 【要調整】
 export const DIVE_HAND_OFFSET = 0.7; // 飛び込んだ体の位置から手（打点）までの距離
+/** 人のフライングは、飛び込んだ手がこの範囲（落下予測円＋余裕）に入らなければ上がらない 【要調整】 */
+export const DIVE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 
 // ---- レシーブの担当 ----
 /** 相手からのボールがネットからこの距離より奥に落ちるときは、後衛がレシーブする 【要調整】 */

@@ -17,6 +17,7 @@ import {
 } from './constants.ts';
 import {
   advanceBall,
+  aimDive,
   applyContact,
   ballComingTo,
   ballSpeed,
@@ -226,10 +227,13 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
       if (s.pending && s.pending.team === team) return;
       const kind: ContactKind = action;
       const r = judgeRelease(s, p, kind, tick);
+      // フライングはスティックの向き（倒していなければ走っていた向き）へ飛ぶ。手が落下予測円に入らなければ上がらない
+      const aim = r.dive && r.judgment !== 'MISS' ? aimDive(s, p, diveDirection(p, t.mx, t.mf)) : null;
+      if (aim && !aim.ok) r.judgment = 'MISS';
       s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive });
       if (kind === 'spike') p.swung = true;
+      if (aim) startDive(s, p, r.tStar, aim);
       if (r.judgment === 'MISS') return;
-      if (r.dive) startDive(s, p, r.tStar);
       scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt, dive: r.dive });
       return;
     }
@@ -239,6 +243,13 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
 }
 
 /** いまボタンを離したら何が起きるか（HUD表示にも使う） */
+/** フライングの向き（ワールド座標）：スティック → 走っていた向き → ネット方向 */
+function diveDirection(p: Player, mx: number, mf: number): { x: number; z: number } {
+  if (Math.hypot(mx, mf) > 0.2) return toWorld(p.team, mx, -mf);
+  if (Math.hypot(p.vx, p.vz) > 0.5) return { x: p.vx, z: p.vz };
+  return toWorld(p.team, 0, -1);
+}
+
 export function currentAction(s: GameState, team: TeamId): ActionKind {
   const t = s.teams[team];
   const p = s.players[t.controlled];
