@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ballAt, contactDist, hitPoint, startJump, updateActors } from '../shared/actions.ts';
+import { ballAt, contactDist, hitPoint, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import { SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
-import { judgeOf, playerAtPosition } from '../shared/court.ts';
+import { judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -320,6 +320,37 @@ describe('ツーアタックの誤操作防止', () => {
   });
   it('ボールを追いかけて走っている最中はトスになる', () => {
     expect(currentAction(setup(3), 0)).toBe('toss');
+  });
+});
+
+describe('トスの向き', () => {
+  /** 後衛のセッターに2本目のボールを送り、shiftX だけ打点から離しておく */
+  const setup = (shiftX: number, mx: number) => {
+    const s = createGame({ seed: 5 });
+    const setter = playerAtPosition(s, 0, 1);
+    setter.x = 0.6;
+    setter.z = 1.2;
+    incoming(s, setter.id, { contactsLeft: 2, lastTouch: 0 });
+    setter.x += shiftX;
+    setStick(s, 0, mx, 0);
+    return { s, setter };
+  };
+  const posOf = (s: GameState, id: number) => positionOf(s, s.players[id]);
+  it('打点の近くでは、スティックの左右でレフト・センター・ライトを選べる', () => {
+    expect(posOf(setup(0, -1).s, tossAimTarget(setup(0, -1).s, 0).id)).toBe(4);
+    expect(posOf(setup(0, 0).s, tossAimTarget(setup(0, 0).s, 0).id)).toBe(3);
+    expect(posOf(setup(0, 1).s, tossAimTarget(setup(0, 1).s, 0).id)).toBe(2);
+  });
+  it('ボールを追って走っている最中のスティックでは向きを変えない（センター）', () => {
+    const { s } = setup(3, -1);
+    expect(posOf(s, tossAimTarget(s, 0).id)).toBe(3);
+  });
+  it('離すと、印を出していた相手にトスが上がる', () => {
+    const { s, setter } = setup(0, 0);
+    const t = contactTick(s, setter.id, 'toss');
+    hitAt(s, 0, t, 0, 20, [-1, 0]); // 離す瞬間に左へ
+    expect(s.lastContact?.kind).toBe('toss');
+    expect(posOf(s, s.tossTarget)).toBe(4);
   });
 });
 

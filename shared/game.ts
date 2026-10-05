@@ -37,6 +37,7 @@ import {
   startDive,
   startJump,
   stepJumps,
+  tossAimTarget,
   updateActors,
 } from './actions.ts';
 import { formationSpot, moveToward, runAI, type Target } from './ai.ts';
@@ -234,6 +235,7 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
       if (kind === 'spike') p.swung = true;
       if (aim) startDive(s, p, r.tStar, aim);
       if (r.judgment === 'MISS') return;
+      if (kind === 'toss') s.tossTarget = tossAimTarget(s, team).id; // 押している間に印を出していた相手へ上げる
       scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt, dive: r.dive });
       return;
     }

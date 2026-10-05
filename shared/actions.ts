@@ -57,6 +57,7 @@ import {
   SPIKE_TARGET_LZ,
   STANDING_REACH,
   TICK_RATE,
+  TOSS_AIM_MAX_DIST,
   TOSS_APEX_MAX,
   TOSS_APEX_MIN,
   TOSS_HIT_HEIGHT,
@@ -495,6 +496,18 @@ export function chooseAttacker(s: GameState, team: TeamId, tosser: Player, mx: n
     }
   }
   return best;
+}
+
+/**
+ * 人のトスを上げる相手。打点の近くにいるときだけスティックの左右で選ぶ
+ * （ボールを追って走っている最中のスティックで勝手に決まらないように）。押している間、画面に印を出す。
+ */
+export function tossAimTarget(s: GameState, team: TeamId): Player {
+  const t = s.teams[team];
+  const p = s.players[t.controlled];
+  const ip = interceptPoint(s, team, TOSS_HIT_HEIGHT);
+  const near = ip !== null && Math.hypot(ip.x - p.x, ip.z - p.z) <= TOSS_AIM_MAX_DIST;
+  return chooseAttacker(s, team, p, near ? t.mx : 0);
 }
 
 export function attackZone(s: GameState, p: Player): 'left' | 'center' | 'right' {

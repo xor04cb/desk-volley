@@ -38,6 +38,7 @@ const COLORS = {
   teamDark: [0x1d3f80, 0x7a2222],
   skin: 0xf2c49b,
   marker: 0x3ddc6a,
+  tossAim: 0xffd23a,
   chargeArcs: [0x3a8bff, 0xff4040, 0xffd23a],
   timing: 0xffffff,
 };
@@ -154,6 +155,7 @@ export class Renderer {
   private arrow: THREE.Mesh;
   private players = new Map<number, PlayerMesh>();
   private marker: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number };
+  private tossAim: THREE.Mesh;
   /** 視点。0=チーム0の後ろから、1=チーム1の後ろから */
   view: 0 | 1 = 0;
 
@@ -210,6 +212,15 @@ export class Renderer {
     this.scene.add(this.arrow);
 
     this.marker = this.makeMarker();
+
+    // トスを上げる相手の足元の印（押している間だけ）
+    this.tossAim = new THREE.Mesh(
+      new THREE.RingGeometry(0.45, 0.62, 32),
+      new THREE.MeshBasicMaterial({ color: COLORS.tossAim, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.tossAim.rotation.x = -Math.PI / 2;
+    this.tossAim.visible = false;
+    this.scene.add(this.tossAim);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -358,6 +369,15 @@ export class Renderer {
         this.arrow.rotation.set(-Math.PI / 2, 0, Math.atan2(-dx, -dz));
       }
     } else this.arrow.visible = false;
+  }
+
+  /** トスを上げる相手の印。null で消す */
+  setTossAim(pos: { x: number; z: number } | null): void {
+    this.tossAim.visible = !!pos;
+    if (!pos) return;
+    const pulse = 1 + 0.1 * Math.sin(performance.now() / 90);
+    this.tossAim.position.set(pos.x, 0.024, pos.z);
+    this.tossAim.scale.set(pulse, pulse, pulse);
   }
 
   /** 足元のマーカー（操作中の囲み、溜めの弧、タイミングリング） */

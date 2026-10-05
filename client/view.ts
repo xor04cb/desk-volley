@@ -1,5 +1,5 @@
 // 状態を画面に描く処理（ローカル対戦とオンライン対戦で共通）
-import { chargeOf } from '../shared/actions.ts';
+import { chargeOf, tossAimTarget } from '../shared/actions.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
 import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
 import type { Hud } from './hud.ts';
@@ -33,6 +33,10 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
   const showLanding = s.ball.mode === 'flying' && !s.ball.grounded && s.predLandTick > s.tick && s.phase === 'rally';
   const ownSide = (s.predLandZ >= 0 ? 0 : 1) === T;
   r.setLanding(s.predLandX, s.predLandZ, showLanding, showLanding && ownSide ? p : undefined);
+
+  // トスのボタンを押している間は、上げる相手に印を出す（スティックの左右で移る）
+  const aim = team.pressTick >= 0 && actions[T] === 'toss' ? s.players[tossAimTarget(s, T).id] : null;
+  r.setTossAim(aim);
 
   if (s.phase === 'matchEnd') {
     r.setMarker(null);
