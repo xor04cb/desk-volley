@@ -1,5 +1,5 @@
 // 状態を画面に描く処理（ローカル対戦とオンライン対戦で共通）
-import { chargeOf, tossAimTarget } from '../shared/actions.ts';
+import { ballComingTo, chargeOf, opponentAttacking, tossAimTarget } from '../shared/actions.ts';
 import { roleOf } from '../shared/court.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
 import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
@@ -84,5 +84,27 @@ export function poseOf(s: GameState, p: Player): Pose {
   if (s.phase === 'serve' && p.id === s.server && s.serveTossed) return 'spikeReady';
   const c = s.lastContact;
   if (c && c.kind === 'serve' && c.player === p.id && s.tick - c.tick < SERVE_SWING_TICKS) return 'spikeSwing';
+  if (lowStance(s, p)) return 'low';
   return 'idle';
+}
+
+/**
+ * 低く構える場面か。
+ * ディグ：相手がトスを上げてから、相手のスパイク・フェイント（相手のブロックで跳ね返ったボールも）を自チームが触るまで、全員。
+ * ブロックフォロー：自チームがトスを上げてから、スパイクを相手が触るまで、打つ人以外。
+ */
+function lowStance(s: GameState, p: Player): boolean {
+  if (s.phase !== 'rally' || p.y > 0) return false;
+  const T = p.team;
+  const k = s.lastContactKind;
+  const ours = s.lastTouchTeam === T;
+  // ディグ
+  if (opponentAttacking(s, T)) return true;
+  if (!ours && (k === 'spike' || k === 'feint' || k === 'block') && ballComingTo(s, T)) return true;
+  // ブロックフォロー
+  if (ours && (k === 'toss' || k === 'spike' || k === 'feint') && (k !== 'toss' || s.teams[T].contactsLeft === 1)) {
+    const hitter = k === 'toss' ? s.tossTarget : s.teams[T].lastToucher;
+    return p.id !== hitter;
+  }
+  return false;
 }

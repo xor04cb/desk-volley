@@ -150,8 +150,10 @@ export interface PlayerView {
   pose: Pose;
 }
 
-/** 選手の姿勢。idle=通常、block=ブロック、spikeReady=スパイク・サーブの振りかぶり、spikeSwing=その振り下ろし、dive=フライング */
-export type Pose = 'idle' | 'block' | 'spikeReady' | 'spikeSwing' | 'dive';
+/** 選手の姿勢。idle=通常、low=低い構え（ディグ・ブロックフォロー）、block=ブロック、spikeReady=スパイク・サーブの振りかぶり、spikeSwing=その振り下ろし、dive=フライング */
+export type Pose = 'idle' | 'low' | 'block' | 'spikeReady' | 'spikeSwing' | 'dive';
+
+const POSE_EASE = 14; // 姿勢を切り替える速さ（1秒あたり。大きいほど速く切り替わる）
 
 const SWING_TIME = 0.15; // 秒。振り下ろし・飛び込みの速さ
 
@@ -160,7 +162,8 @@ const BLEND_FROM: Partial<Record<Pose, Pose>> = { spikeSwing: 'spikeReady', dive
 
 /**
  * 姿勢の値。lx/rx=左右の腕の前後の角度（負で前、π付近で真上、正で後ろ）、
- * lz/rz=腕を横に開く角度（外向きが+）、lean=体の前傾（+で前）、twist=体のひねり（+で右肩を引く）
+ * lz/rz=腕を横に開く角度（外向きが+）、lean=体の前傾（+で前）、twist=体のひねり（+で右肩を引く）、
+ * crouch=しゃがむ量（脚の長さを縮める割合。0=立つ）
  */
 interface PoseValues {
   lx: number;
@@ -169,19 +172,23 @@ interface PoseValues {
   rz: number;
   lean: number;
   twist: number;
+  crouch: number;
 }
 const PI = Math.PI;
 const POSES: Record<Pose, PoseValues> = {
-  idle: { lx: -0.15, rx: -0.15, lz: 0, rz: 0, lean: 0, twist: 0 },
+  idle: { lx: -0.15, rx: -0.15, lz: 0, rz: 0, lean: 0, twist: 0, crouch: 0 },
+  // 腰を落とし、両腕を前下に出して少し開く（ディグ・ブロックフォロー）
+  low: { lx: -0.75, rx: -0.75, lz: 0.28, rz: 0.28, lean: 0.38, twist: 0, crouch: 0.38 },
   // 両腕をまっすぐ上に伸ばして少し開く
-  block: { lx: -PI * 0.98, rx: -PI * 0.98, lz: 0.16, rz: 0.16, lean: 0.05, twist: 0 },
+  block: { lx: -PI * 0.98, rx: -PI * 0.98, lz: 0.16, rz: 0.16, lean: 0.05, twist: 0, crouch: 0 },
   // 左腕でボールを指し、右腕は真横から頭の後ろへ引き上げる（後ろからのカメラでも分かるように横に張る）。体は反る
-  spikeReady: { lx: -PI * 0.8, rx: -PI * 0.25, lz: 0.05, rz: 2.6, lean: -0.2, twist: 0.25 },
+  spikeReady: { lx: -PI * 0.8, rx: -PI * 0.25, lz: 0.05, rz: 2.6, lean: -0.2, twist: 0.25, crouch: 0 },
   // 右腕を体の左下まで振り切り、体を前に倒す
-  spikeSwing: { lx: -0.1, rx: -0.5, lz: 0.2, rz: -0.9, lean: 0.3, twist: -0.25 },
+  spikeSwing: { lx: -0.1, rx: -0.5, lz: 0.2, rz: -0.9, lean: 0.3, twist: -0.25, crouch: 0 },
   // 前へ飛び込んで床に体を伸ばし、両腕をボールの方へ伸ばす
-  dive: { lx: -PI * 0.9, rx: -PI * 0.9, lz: 0.08, rz: 0.08, lean: 1.4, twist: 0 },
+  dive: { lx: -PI * 0.9, rx: -PI * 0.9, lz: 0.08, rz: 0.08, lean: 1.4, twist: 0, crouch: 0 },
 };
+const POSE_KEYS = Object.keys(POSES.idle) as (keyof PoseValues)[];
 
 export interface MarkerView {
   /** 操作中の選手のid（-1=なし） */
@@ -198,8 +205,15 @@ class PlayerMesh {
   body: THREE.Group;
   armL: THREE.Mesh;
   armR: THREE.Mesh;
+  /** 脚（しゃがむと縮む）と、脚より上（しゃがむと下がる） */
+  legs: THREE.Mesh[] = [];
+  upper = new THREE.Group();
+  legH: number;
   pose: Pose = 'idle';
   poseStart = 0;
+  /** 今表示している姿勢（目標の姿勢へなめらかに近づける） */
+  cur: PoseValues = { ...POSES.idle };
+  lastTime = performance.now() / 1000;
   constructor(team: 0 | 1) {
     const s = VIEW.playerScale;
     const H = PLAYER_HEIGHT * s;
@@ -209,18 +223,20 @@ class PlayerMesh {
     this.body = new THREE.Group();
     this.body.rotation.order = 'YXZ'; // 向きを変えてから前後に傾ける
     const legH = H * 0.42;
+    this.legH = legH;
     for (const sx of [-1, 1]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.17 * s, legH, 0.2 * s), dark);
       leg.position.set(sx * 0.12 * s, legH / 2, 0);
       this.body.add(leg);
+      this.legs.push(leg);
     }
     const torsoH = H * 0.36;
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5 * s, torsoH, 0.3 * s), mat);
     torso.position.y = legH + torsoH / 2;
-    this.body.add(torso);
+    this.upper.add(torso);
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.3 * s, 0.3 * s, 0.3 * s), skin);
     head.position.y = legH + torsoH + 0.17 * s;
-    this.body.add(head);
+    this.upper.add(head);
     const armGeo = new THREE.BoxGeometry(0.12 * s, 0.62 * s, 0.14 * s);
     armGeo.translate(0, -0.28 * s, 0); // 肩を回転の中心にする
     this.armL = new THREE.Mesh(armGeo, skin);
@@ -228,7 +244,8 @@ class PlayerMesh {
     const shoulderY = legH + torsoH - 0.05;
     this.armL.position.set(-0.32 * s, shoulderY, 0);
     this.armR.position.set(0.32 * s, shoulderY, 0);
-    this.body.add(this.armL, this.armR);
+    this.upper.add(this.armL, this.armR);
+    this.body.add(this.upper);
     this.group.add(this.body);
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.35, 16),
@@ -473,21 +490,32 @@ export class Renderer {
         m.pose = pv.pose;
         m.poseStart = now;
       }
-      let ps = POSES[pv.pose];
       const from = BLEND_FROM[pv.pose];
+      const target = POSES[pv.pose];
+      const frameDt = Math.min(now - m.lastTime, 0.1);
+      m.lastTime = now;
       if (from) {
-        // 振りかぶり→振り下ろし、立った姿勢→飛び込みを素早くつなぐ
+        // 振りかぶり→振り下ろし、立った姿勢→飛び込みは決まった時間で素早くつなぐ
         const k = Math.min((now - m.poseStart) / SWING_TIME, 1);
         const a = POSES[from];
-        const b = POSES[pv.pose];
         const e = 1 - (1 - k) * (1 - k);
-        const mix = (key: keyof PoseValues) => a[key] + (b[key] - a[key]) * e;
-        ps = { lx: mix('lx'), rx: mix('rx'), lz: mix('lz'), rz: mix('rz'), lean: mix('lean'), twist: mix('twist') };
+        for (const key of POSE_KEYS) m.cur[key] = a[key] + (target[key] - a[key]) * e;
+      } else {
+        // それ以外（構える・立つなど）はなめらかに近づける
+        const k = 1 - Math.exp(-POSE_EASE * frameDt);
+        for (const key of POSE_KEYS) m.cur[key] += (target[key] - m.cur[key]) * k;
       }
+      const ps = m.cur;
       m.armL.rotation.set(ps.lx, 0, -ps.lz);
       m.armR.rotation.set(ps.rx, 0, ps.rz);
       m.body.rotation.x = ps.lean;
       m.body.rotation.y += ps.twist;
+      // しゃがむ：脚を縮め、上半身をその分下げる
+      for (const leg of m.legs) {
+        leg.scale.y = 1 - ps.crouch;
+        leg.position.y = (m.legH * (1 - ps.crouch)) / 2;
+      }
+      m.upper.position.y = -m.legH * ps.crouch;
     }
   }
 
