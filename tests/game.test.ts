@@ -75,10 +75,10 @@ describe('タイミング判定（フェーズ4）', () => {
     [2, 'PERFECT'],
     [-5, 'PERFECT'], // レシーブは早めに離すと甘い（EARLY_GRACE）
     [-8, 'GOOD'],
-    [6, 'GOOD'], // 遅れて離した → 巻き戻して打つ
     [-12, 'BAD'],
-    [13, 'BAD'],
     [-20, 'MISS'],
+    [6, 'MISS'], // レシーブの打点からすぐ床に落ちる。落ちた後に離しても上がらない
+    [13, 'MISS'],
   ];
   for (const [off, want] of cases) {
     it(`${((off / TICK_RATE) * 1000).toFixed(0)}ms ずれ → ${want}`, () => {
@@ -93,10 +93,10 @@ describe('タイミング判定（フェーズ4）', () => {
     });
   }
 
-  it('遅れて離したときは、理想の時刻のボール位置から打ち直される', () => {
+  it('遅れて離したときは、理想の時刻のボール位置から打ち直される（床に落ちる前なら）', () => {
     const s = createGame({ seed: 3 });
-    incoming(s, receiver);
-    const t = contactTick(s, receiver, 'receive');
+    incoming(s, receiver, { contactsLeft: 2, lastTouch: 0 }); // トス：打点が高く、すぐには落ちない
+    const t = contactTick(s, receiver, 'toss');
     hitAt(s, 0, t, 7, 20); // 117ms 遅れ
     expect(s.lastContact?.tick).toBe(t);
     expect(s.lastContact?.judgment).toBe('GOOD');

@@ -135,7 +135,7 @@ export function runAI(s: GameState, T: TeamId): Target | null {
 /** ボールが打点に最も近づいた瞬間なら、ぶれのあるタイミングで打つ */
 function tryHit(s: GameState, p: Player, kind: ContactKind): void {
   const T = p.team;
-  if (s.aiMissTick[T] >= 0 || s.pending) return;
+  if (s.aiMissTick[T] >= 0 || s.pending || s.landTick >= 0) return; // 床に落ちたボールは打たない
   const b0 = ballAt(s, s.tick);
   const b1 = ballAt(s, s.tick + 1);
   if (!b0 || !b1) return;

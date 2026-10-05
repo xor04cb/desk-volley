@@ -192,8 +192,11 @@ export function judgeRelease(s: GameState, p: Player, kind: ContactKind, release
   const W = JUDGE_WINDOW_TICKS;
   let best = Infinity;
   let bestT = -1;
+  // 床に落ちた後に離したら、遅れて離した扱いで巻き戻すことはしない（落ちたボールが上がって見えるため）
+  if (s.landTick >= 0 && releaseTick >= s.landTick) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false };
   // 窓の外側1tickも見て、最小が窓の端に張り付いていないか確かめる
   for (let t = releaseTick - W - 1; t <= releaseTick + W + 1; t++) {
+    if (s.landTick >= 0 && t >= s.landTick) break; // 跳ね返ったボールは打てない
     const b = ballAt(s, t);
     if (!b) continue;
     const d = contactDist(s, p, kind, t, b);
