@@ -171,6 +171,7 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
         mf = cf;
       }
     }
+    charge = randRange(s.rng, AI.spikeChargeMin, AI.spikeChargeMax); // 人が空中で溜められる範囲に合わせる
     if (s.rules.feint && rand(s.rng) < AI.feintRate) charge = 0.05;
   }
   const action: ActionKind = kind === 'spike' || kind === 'feint' ? 'spike' : kind === 'free' ? 'free' : kind === 'toss' ? 'toss' : 'receive';

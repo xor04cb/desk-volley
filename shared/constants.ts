@@ -33,6 +33,8 @@ export const PLAYER_MIN_NET_DIST = 0.35; // 選手がネットに近づける距
 
 // ---- 溜め・タイミング ----
 export const CHARGE_MAX = 0.6; // 秒。これだけ押すと溜め最大 【要調整】
+/** スパイク（空中の2回目）の溜め最大（秒）。跳んでから打つまで0.36〜0.56秒しかないので短くする 【要調整】 */
+export const SPIKE_CHARGE_MAX = 0.3;
 export const JUDGE = {
   PERFECT: 0.05, // ±50ms
   GOOD: 0.12, // ±120ms
@@ -89,7 +91,8 @@ export const SPIKE_SPEED_MIN = 9; // m/s（水平） 【要調整】
 export const SPIKE_SPEED_MAX = 17;
 export const SPIKE_SCATTER_MAX = 2.6;
 export const SPIKE_SCATTER_MIN = 0.3;
-export const SPIKE_CHARGE_FLOOR = 0.15; // これ未満はフェイント（ONのとき）
+export const FEINT_TAP_SEC = 0.09; // スパイクの2回目をこれより短く押すとフェイント（ONのとき） 【要調整】
+export const SPIKE_CHARGE_FLOOR = FEINT_TAP_SEC / SPIKE_CHARGE_MAX; // 溜め量にしたフェイントの境目
 export const SPIKE_TARGET_LZ = 6.0; // 狙いの深さ（相手ネットからの距離）
 export const SPIKE_AIM_LX = 3.0; // スティック横倒しでの左右の狙い
 
@@ -140,6 +143,9 @@ export const AI = {
   timingSigma: 0.07, // AIの押すタイミングのぶれ（秒）【要調整】
   chargeMin: 0.4,
   chargeMax: 1.0,
+  // スパイクの溜め量。人は空中で0.2〜0.4秒押せる＝溜め0.67〜1.0なので、それに合わせる 【要調整】
+  spikeChargeMin: 0.6,
+  spikeChargeMax: 1.0,
   reactionDelay: 0.25, // 相手の打球に反応するまでの秒数
   spikeReactionExtra: 0.12, // スパイクへの反応はさらに遅れる（秒）
   aimSamples: 4, // スパイクの狙いを何案から選ぶか（多いほど空いた所を突く）

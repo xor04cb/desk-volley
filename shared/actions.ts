@@ -47,6 +47,7 @@ import {
   SET_TARGET,
   SPIKE_AIM_LX,
   SPIKE_CHARGE_FLOOR,
+  SPIKE_CHARGE_MAX,
   SPIKE_FRAME_RADIUS,
   SPIKE_REACH,
   SPIKE_SCATTER_MAX,
@@ -68,7 +69,7 @@ import {
 import { FORMATION, isFrontRow, judgeOf, positionOf, toLocal, toWorld } from './court.ts';
 import { launch, predict, sideOf, solveByApex, solveBySpeed, stepBall, type BallEvent } from './physics.ts';
 import { rand, randInCircle, randRange } from './prng.ts';
-import type { ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
+import type { ActionKind, ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
 import { clamp, copy3, dist2, dist3, lerp, v3, type Vec3 } from './vec.ts';
 
 // ---------------------------------------------------------------- 予測・履歴
@@ -262,8 +263,9 @@ export function startDive(s: GameState, p: Player, ballTick: number, body?: { x:
 
 export const ballSpeed = (s: GameState): number => Math.hypot(s.ball.vel.x, s.ball.vel.y, s.ball.vel.z);
 
-export const chargeOf = (pressTick: number, releaseTick: number): number =>
-  clamp((releaseTick - pressTick) / TICK_RATE / CHARGE_MAX, 0, 1);
+/** 押していた時間から溜め量（0〜1）。スパイクは空中で溜める時間が短いので最大までの時間も短い */
+export const chargeOf = (pressTick: number, releaseTick: number, action?: ActionKind): number =>
+  clamp((releaseTick - pressTick) / TICK_RATE / (action === 'spike' ? SPIKE_CHARGE_MAX : CHARGE_MAX), 0, 1);
 
 // ---------------------------------------------------------------- 打球
 

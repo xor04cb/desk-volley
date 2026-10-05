@@ -207,10 +207,10 @@ export function press(s: GameState, team: TeamId, tick = s.tick): void {
 export function release(s: GameState, team: TeamId, tick = s.tick): void {
   const t = s.teams[team];
   if (t.pressTick < 0) return;
-  const charge = chargeOf(t.pressTick, tick);
-  t.pressTick = -1;
   const p = s.players[t.controlled];
   const action = currentAction(s, team);
+  const charge = chargeOf(t.pressTick, tick, action);
+  t.pressTick = -1;
   switch (action) {
     case 'jump':
     case 'twoJump':

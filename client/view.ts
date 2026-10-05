@@ -1,4 +1,5 @@
 // 状態を画面に描く処理（ローカル対戦とオンライン対戦で共通）
+import { chargeOf } from '../shared/actions.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
 import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
 import type { Hud } from './hud.ts';
@@ -37,7 +38,7 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
     r.setMarker(null);
     hud.setNameTag(null);
   } else {
-    const charge = team.pressTick >= 0 ? Math.min((s.tick - team.pressTick) / 60 / 0.6, 1) : -1;
+    const charge = team.pressTick >= 0 ? chargeOf(team.pressTick, s.tick, actions[T]) : -1;
     const timing = s.phase === 'rally' || s.phase === 'serve' ? timeToContact(s, T) : -1;
     r.setMarker({ player: p.id, name: p.name, charge, timing }, p);
     const sp = r.project(p.x, 0, p.z);

@@ -174,7 +174,8 @@ describe('溜めの効果（フェーズ3）', () => {
 
   it('スパイク：溜めるほど打球が速い（短いタップはフェイント）', () => {
     const res: { kind: string; speed: number }[] = [];
-    for (const hold of [2, 18, 36]) {
+    for (const hold of [2, 10, 18]) {
+      // 33ms＝フェイント、167ms、300ms＝溜め最大（SPIKE_CHARGE_MAX）
       const s = createGame({ seed: 7 });
       const atk = s.players.find((p) => p.team === 0 && p.slot === 3)!;
       // 空中の選手の手元にボールが来るようにする
