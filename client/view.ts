@@ -11,7 +11,7 @@ export interface ViewOptions {
 }
 
 export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): [ActionKind, ActionKind] {
-  r.setBall(s.ball.pos, true);
+  r.setBall(s.ball.pos, true, s.ball.mode === 'flying' ? s.ball.vel : undefined);
   r.setPlayers(
     s.players.map((p) => ({
       id: p.id,
@@ -57,6 +57,10 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
 /** イベントに応じたポップアップ（判定の文字など） */
 export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEvent[], o: ViewOptions): void {
   for (const e of events) {
+    // 打球に合わせてボールを回す（見た目だけ）
+    if (e.type === 'contact') r.spinBall(e.info.kind, s.ball.vel, e.info.charge);
+    else if (e.type === 'block') r.spinBall('block', s.ball.vel);
+    else if (e.type === 'net') r.spinBall('net', s.ball.vel);
     if (e.type === 'judge') {
       const p = s.players[e.player];
       const sp = r.project(p.x, p.y + 2.3, p.z);

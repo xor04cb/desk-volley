@@ -10,6 +10,7 @@ import {
   NET_POST_OFFSET,
   PLAYER_HEIGHT,
 } from '../shared/constants.ts';
+import type { ContactKind } from '../shared/types.ts';
 import type { Vec3 } from '../shared/vec.ts';
 
 /** 見た目だけの調整値 */
@@ -31,8 +32,10 @@ const COLORS = {
   net: 0x111111,
   netTop: 0xf4f4f4,
   post: 0xcccccc,
-  ball: 0xffd23a,
-  ballStripe: 0x2a5fd6,
+  // ボールのパネル（3本1組の外側の色。中央は白）。既存製品と被らない配色
+  ballPanels: ['#f2b51d', '#1f5fa8', '#f2b51d'],
+  ballWhite: '#f6f3ea',
+  ballSeam: 'rgba(40, 32, 24, 0.55)',
   landing: 0xff5a2a,
   team: [0x2f6fdb, 0xd94141],
   teamDark: [0x1d3f80, 0x7a2222],
@@ -42,6 +45,96 @@ const COLORS = {
   chargeArcs: [0x3a8bff, 0xff4040, 0xffd23a],
   timing: 0xffffff,
 };
+
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** ボールの回転の速さ（rad/s）。見た目だけ */
+const BALL_SPIN = {
+  spike: 32, // 強い順回転（1秒に約5回転）
+  float: 0.8, // 無回転サーブ（ほとんど回らない）
+  toss: 1.5, // トスはほぼ無回転
+  under: 9, // フェイント・返球の逆回転
+  receive: 10, // レシーブ・ブロックの不規則な回転
+  decay: 0.25, // 空気で弱まる割合（1秒あたり）
+};
+
+/**
+ * バレーボール：立方体を球に膨らませ、各面を3本のパネルに分ける（6組×3本＝18枚）。
+ * 向かい合う面の組ごとにパネルの向きを直交させ、本物と同じ組み方にする。
+ */
+function makeVolleyball(radius: number): THREE.Mesh {
+  const N = 12; // 1面の分割数
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const geo = new THREE.BufferGeometry();
+  // [面の法線, パネルが並ぶ向き(v), もう一方(u)]。v の向きを組ごとに変える
+  const faces: [THREE.Vector3, THREE.Vector3, THREE.Vector3, number][] = [
+    [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), 0],
+    [new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), 0],
+    [new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), 1],
+    [new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0), 1],
+    [new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), 2],
+    [new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, -1, 0), 2],
+  ];
+  const p = new THREE.Vector3();
+  for (const [n, v, u, mat] of faces) {
+    const base = pos.length / 3;
+    const start = index.length;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const a = -1 + (2 * i) / N;
+        const b = -1 + (2 * j) / N;
+        p.copy(n).addScaledVector(u, a).addScaledVector(v, b).normalize().multiplyScalar(radius);
+        pos.push(p.x, p.y, p.z);
+        uv.push(i / N, j / N);
+      }
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const k = base + j * (N + 1) + i;
+        // 外向きの面になるよう、u×v が法線と同じ向きかで並びを変える
+        const ccw = new THREE.Vector3().crossVectors(u, v).dot(n) > 0;
+        if (ccw) index.push(k, k + 1, k + N + 2, k, k + N + 2, k + N + 1);
+        else index.push(k, k + N + 2, k + 1, k, k + N + 1, k + N + 2);
+      }
+    }
+    geo.addGroup(start, index.length - start, mat);
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  const mats = COLORS.ballPanels.map((c) => new THREE.MeshStandardMaterial({ map: panelTexture(c), roughness: 0.55, metalness: 0 }));
+  return new THREE.Mesh(geo, mats);
+}
+
+/** 1面ぶんのテクスチャ：色・白・色の3本のパネルと縫い目 */
+function panelTexture(color: string): THREE.CanvasTexture {
+  const S = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d')!;
+  const bands = [color, COLORS.ballWhite, color];
+  for (let k = 0; k < 3; k++) {
+    g.fillStyle = bands[k];
+    g.fillRect(0, (k * S) / 3, S, S / 3 + 1);
+  }
+  g.strokeStyle = COLORS.ballSeam;
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(0, S / 3);
+  g.lineTo(S, S / 3);
+  g.moveTo(0, (2 * S) / 3);
+  g.lineTo(S, (2 * S) / 3);
+  g.stroke();
+  g.lineWidth = 4; // 面と面の境目
+  g.strokeRect(0, 0, S, S);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
 
 export interface PlayerView {
   id: number;
@@ -149,7 +242,10 @@ export class Renderer {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   private gl: THREE.WebGLRenderer;
-  private ball: THREE.Group;
+  private ball: THREE.Mesh;
+  /** ボールの角速度（rad/s、ワールド座標の軸） */
+  private ballSpin = new THREE.Vector3();
+  private lastBallTime = performance.now();
   private ballShadow: THREE.Mesh;
   private landing: THREE.Mesh;
   private arrow: THREE.Mesh;
@@ -172,15 +268,8 @@ export class Renderer {
 
     this.buildCourt();
 
-    this.ball = new THREE.Group();
     const r = BALL_RADIUS * VIEW.ballScale;
-    const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), new THREE.MeshLambertMaterial({ color: COLORS.ball }));
-    const stripe = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.0, r * 0.18, 6, 24),
-      new THREE.MeshLambertMaterial({ color: COLORS.ballStripe }),
-    );
-    stripe.rotation.x = Math.PI / 2.6;
-    this.ball.add(ballMesh, stripe);
+    this.ball = makeVolleyball(r);
     this.scene.add(this.ball);
 
     this.ballShadow = new THREE.Mesh(
@@ -304,12 +393,59 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
-  setBall(pos: Vec3, visible = true): void {
+  /**
+   * 打球の種類に合わせてボールの回転を決める（見た目だけ。物理には影響しない）。
+   * vel は打った直後の速度。
+   */
+  spinBall(kind: ContactKind | 'block' | 'net', vel: Vec3, charge = 0): void {
+    const dir = new THREE.Vector3(vel.x, 0, vel.z);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    // 順回転（ボールの上側が進む向きへ回る）の軸
+    const top = new THREE.Vector3().crossVectors(UP, dir);
+    const randomAxis = () => new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    switch (kind) {
+      case 'spike':
+        this.ballSpin.copy(top).multiplyScalar(BALL_SPIN.spike * (0.7 + 0.3 * charge));
+        break;
+      case 'serve':
+        // 溜めが少ないと無回転（揺れる程度）、溜めるほどドライブ回転
+        if (charge < 0.5) this.ballSpin.copy(randomAxis()).multiplyScalar(BALL_SPIN.float);
+        else this.ballSpin.copy(top).multiplyScalar(BALL_SPIN.spike * charge);
+        break;
+      case 'toss':
+        this.ballSpin.copy(randomAxis()).multiplyScalar(BALL_SPIN.toss);
+        break;
+      case 'feint':
+      case 'free':
+        this.ballSpin.copy(top).multiplyScalar(-BALL_SPIN.under); // 逆回転
+        break;
+      case 'net':
+        this.ballSpin.multiplyScalar(0.3);
+        break;
+      default:
+        // レシーブ・ブロック：腕に当たって不規則に回る
+        this.ballSpin.copy(randomAxis()).multiplyScalar(BALL_SPIN.receive * (0.6 + 0.8 * Math.random()));
+    }
+  }
+
+  setBall(pos: Vec3, visible = true, vel?: Vec3): void {
+    const now = performance.now();
+    const dt = Math.min((now - this.lastBallTime) / 1000, 0.05);
+    this.lastBallTime = now;
     this.ball.visible = visible;
     this.ballShadow.visible = visible;
     this.ball.position.set(pos.x, pos.y, pos.z);
-    this.ball.rotation.x += 0.15;
-    this.ball.rotation.z += 0.07;
+    const drawR = BALL_RADIUS * VIEW.ballScale;
+    if (vel && pos.y <= BALL_RADIUS + 0.03) {
+      // 床の上：転がる回転
+      this.ballSpin.crossVectors(UP, new THREE.Vector3(vel.x, 0, vel.z)).multiplyScalar(1 / drawR);
+    }
+    this.ballSpin.multiplyScalar(Math.exp(-BALL_SPIN.decay * dt)); // 空気で少しずつ弱まる
+    const w = this.ballSpin.length();
+    if (w > 1e-4 && dt > 0) {
+      this.ball.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(this.ballSpin.clone().divideScalar(w), w * dt));
+    }
     this.ballShadow.position.set(pos.x, 0.015, pos.z);
     const s = Math.max(0.4, 1 - pos.y * 0.08);
     this.ballShadow.scale.set(s, s, s);
