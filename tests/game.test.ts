@@ -478,8 +478,18 @@ describe('レシーブの担当', () => {
     const { s, back } = nearNet(false, [1.0, 1.5], [0, 3.0], true);
     expect(s.teams[0].controlled).toBe(back.id);
   });
-  it('フェイントは前に落ちても後衛が拾う', () => {
-    const { s, back } = setup(2, true);
+  it('アタックラインより前に落ちるフェイントは前衛が取る', () => {
+    const { s, front } = setup(2, true);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('前に落ちるフェイントは、後衛の方が近くても前衛が取る', () => {
+    const { s, front } = nearNet(false, [1.8, 1.5], [0.5, 2.3]);
+    s.lastContactKind = 'feint';
+    updateActors(s);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('アタックラインより奥に落ちるフェイントは後衛が取る', () => {
+    const { s, back } = setup(4.5, true);
     expect(s.teams[0].controlled).toBe(back.id);
   });
 });
