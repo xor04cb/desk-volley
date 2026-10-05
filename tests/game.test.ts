@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ballAt, contactDist, hitPoint, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import { RECEIVE_RECOVER_TICKS, SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
-import { judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
+import { isFrontRow, judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -121,6 +121,25 @@ describe('イベントの受け渡し', () => {
     for (let i = 0; i < 30; i++) tick();
     expect(seen.filter((t) => t === 'judge')).toHaveLength(1);
     expect(seen.filter((t) => t === 'contact')).toHaveLength(1);
+  });
+});
+
+describe('サーブの後の操作', () => {
+  it('サーブを打ったら前衛の選手に切り替わり、サーバーは自動で戻る', () => {
+    const s = createGame({ seed: 1, rules: { serveTime: 30 } });
+    const server = s.server;
+    expect(s.teams[0].controlled).toBe(server);
+    press(s, 0);
+    for (let i = 0; i < 10; i++) step(s);
+    release(s, 0);
+    while (!s.lastContact) step(s);
+    step(s);
+    const c = s.players[s.teams[0].controlled];
+    expect(c.id).not.toBe(server);
+    expect(isFrontRow(positionOf(s, c))).toBe(true);
+    const z0 = s.players[server].z;
+    for (let i = 0; i < 30; i++) step(s);
+    expect(s.players[server].z).toBeLessThan(z0); // コートの中へ戻っている
   });
 });
 
