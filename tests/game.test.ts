@@ -551,6 +551,40 @@ describe('レシーブの担当', () => {
     updateActors(s);
     expect(s.teams[0].controlled).toBe(back.id);
   });
+  /** 相手が x=atkX から、自コートの (landX, 1.5) へフェイント。前衛右・中央をボールの近くに置く */
+  const feintFrom = (atkX: number, landX: number) => {
+    const s = createGame({ seed: 5 });
+    const atk = playerAtPosition(s, 1, 4);
+    atk.x = atkX;
+    atk.z = -0.6;
+    for (const pos of [2, 3, 4]) {
+      const p = playerAtPosition(s, 0, pos);
+      p.x = landX + (pos - 3) * 0.6;
+      p.z = 2.0;
+    }
+    const from = v3(atkX, 3.0, -0.4);
+    launch(s.ball, from, solveByApex(from, landX, 1.5, 3.6));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'feint';
+    s.lastContact = { team: 1, player: atk.id, kind: 'feint' } as ContactInfo;
+    s.teams[0].contactsLeft = 3;
+    computePath(s);
+    updateActors(s);
+    return s;
+  };
+  it('サイドからのまっすぐなフェイントは、その側の後衛が取る（前衛が近くても）', () => {
+    const ctrlPos = (s: GameState) => positionOf(s, s.players[s.teams[0].controlled]);
+    expect(ctrlPos(feintFrom(-3, -3))).toBe(5); // 自コートの左
+    expect(ctrlPos(feintFrom(3, 3.2))).toBe(1); // 自コートの右
+  });
+  it('サイドからでもクロスのフェイント、中央からのフェイントは今までどおり', () => {
+    const cross = feintFrom(-3, 1);
+    expect(positionOf(cross, cross.players[cross.teams[0].controlled])).not.toBe(5);
+    const center = feintFrom(0, 0.3);
+    expect([1, 5]).not.toContain(positionOf(center, center.players[center.teams[0].controlled]));
+  });
   it('アタックラインより奥に落ちるフェイントは後衛が取る', () => {
     const { s, back } = setup(4.5, true);
     expect(s.teams[0].controlled).toBe(back.id);

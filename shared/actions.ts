@@ -43,6 +43,8 @@ import {
   SERVE_HIT_HEIGHT,
   SERVE_SCATTER_MAX,
   SERVE_SCATTER_MIN,
+  SIDE_ATTACK_MIN_X,
+  STRAIGHT_FEINT_MAX_DX,
   SERVE_TARGET_LZ_FAST,
   SERVE_TARGET_LZ_SLOW,
   SERVE_TOSS_HEIGHT,
@@ -69,7 +71,7 @@ import {
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
 } from './constants.ts';
-import { FORMATION, isFrontRow, judgeOf, positionOf, toLocal, toWorld } from './court.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, toLocal, toWorld } from './court.ts';
 import { launch, predict, sideOf, solveByApex, solveBySpeed, stepBall, type BallEvent } from './physics.ts';
 import { rand, randInCircle, randRange } from './prng.ts';
 import type { ActionKind, ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
@@ -658,6 +660,18 @@ export function travelTime(p: Player, x: number, z: number): number {
   return air + dist2(p.x, p.z, x, z) / PLAYER_SPEED;
 }
 
+/**
+ * 相手のサイド（レフト・ライト）からのまっすぐなフェイントなら、その側の後衛（右なら1番、左なら5番）。それ以外は null
+ * landX は落下地点（ワールド座標）
+ */
+export function straightSideFeint(s: GameState, T: TeamId, landX: number): Player | null {
+  const c = s.lastContact;
+  if (s.lastContactKind !== 'feint' || !c || c.team === T || s.teams[T].contactsLeft !== 3) return null;
+  const atk = s.players[c.player];
+  if (Math.abs(atk.x) < SIDE_ATTACK_MIN_X || Math.abs(landX - atk.x) > STRAIGHT_FEINT_MAX_DX) return null;
+  return playerAtPosition(s, T, toLocal(T, landX, 0).lx > 0 ? 1 : 5);
+}
+
 /** 地点に（空中かどうかに関わらず）距離が最も近い選手 */
 export function nearestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number): Player {
   let best: Player | null = null;
@@ -736,7 +750,9 @@ export function updateActors(s: GameState): void {
           else if (s.lastContactKind === 'feint') skipBlockers = true;
           else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers)).id;
+        const side = ip ? straightSideFeint(s, T, ip.x) : null;
+        if (side) team.controlled = side.id;
+        else if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

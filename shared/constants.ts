@@ -138,6 +138,10 @@ export const DIVE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 /** 相手からのボールがネットからこの距離より奥に落ちるときは、後衛がレシーブする 【要調整】 */
 export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
 
+// サイドからのまっすぐなフェイントは、その側の後衛が取る 【要調整】
+export const SIDE_ATTACK_MIN_X = 2.0; // 打った選手がコート中央からこれ以上離れていればサイドからの攻撃(m)
+export const STRAIGHT_FEINT_MAX_DX = 1.5; // 落下地点が打った選手の正面からこの範囲ならまっすぐ(m)
+
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）
