@@ -83,6 +83,7 @@ export function createGame(opts: GameOptions = {}): GameState {
         vz: 0,
         jump: 'none',
         swung: false,
+        recoverTick: -1,
         diveTick: -1,
         diveX: 0,
         diveZ: 0,
@@ -175,6 +176,7 @@ export function startServe(s: GameState): void {
     p.jump = 'none';
     p.swung = false;
     p.diveTick = -1;
+    p.recoverTick = -1;
   }
   s.ball = makeBall();
   holdBall(s);
@@ -345,6 +347,12 @@ function movePlayers(s: GameState): void {
       }
       if (e >= DIVE_RECOVER_TICKS) p.diveTick = -1;
       clampToSide(p, false);
+      continue;
+    }
+    if (s.tick < p.recoverTick) {
+      // カットの直後は少しの間動けない
+      p.vx = 0;
+      p.vz = 0;
       continue;
     }
     if (p.jump !== 'none') {

@@ -33,6 +33,7 @@ import {
   RECEIVE_FAST_SPEED,
   RECEIVE_REACH,
   RECEIVE_REACH_FAST,
+  RECEIVE_RECOVER_TICKS,
   RECEIVE_SCATTER_MAX,
   RECEIVE_SCATTER_MIN,
   SERVE_AIM_LX,
@@ -435,6 +436,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
   }
 
   launch(s.ball, from, vel);
+  if (kind === 'receive') p.recoverTick = ballTick + RECEIVE_RECOVER_TICKS; // カットの後は少し動けない
   if (kind === 'serve') {
     s.phase = 'rally';
     s.phaseTick = s.tick;

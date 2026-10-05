@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ballAt, contactDist, hitPoint, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
-import { SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
+import { RECEIVE_RECOVER_TICKS, SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
 import { judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
@@ -102,6 +102,31 @@ describe('タイミング判定（フェーズ4）', () => {
     expect(s.lastContact?.judgment).toBe('GOOD');
     // 打球は上向きに飛び、まだ接地していない
     expect(s.landTick).toBe(-1);
+  });
+});
+
+describe('カットの後の硬直', () => {
+  it('カットした選手は RECEIVE_RECOVER_TICKS の間動けず、その後は動ける', () => {
+    const s = createGame({ seed: 3 });
+    incoming(s, receiver);
+    const t = contactTick(s, receiver, 'receive');
+    while (s.tick < t - 20) step(s);
+    press(s, 0);
+    while (s.tick < t) step(s);
+    release(s, 0);
+    while (!s.lastContact) step(s);
+    const c = s.lastContact;
+    expect(c.kind).toBe('receive');
+    expect(s.tick - c.tick).toBeLessThan(3); // 打った直後から見る
+    const p = s.players[receiver];
+    p.x += 3; // 守備位置から離しておき、動けるようになったら戻るのを見る
+    const x = p.x;
+    const z = p.z;
+    while (s.tick < c.tick + RECEIVE_RECOVER_TICKS) step(s);
+    expect(p.x).toBeCloseTo(x, 6);
+    expect(p.z).toBeCloseTo(z, 6);
+    for (let i = 0; i < 30; i++) step(s);
+    expect(Math.hypot(p.x - x, p.z - z)).toBeGreaterThan(0.05); // 起きたら守備位置へ戻り始める
   });
 });
 

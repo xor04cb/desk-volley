@@ -69,6 +69,7 @@ export const SPIKE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 // ---- レシーブ ----
 export const RECEIVE_APEX_MIN = 3.6; // 最高点の高さ
 export const RECEIVE_APEX_MAX = 4.6;
+export const RECEIVE_RECOVER_TICKS = 24; // カットした選手はこの間（0.4秒）動けない 【要調整】
 export const SERVE_RECEIVE_APEX_BONUS = 1.0; // サーブカットはこれだけ高く上げる 【要調整】
 export const RECEIVE_SCATTER_MAX = 3.2; // 溜め0・BAD時のぶれ半径(m) 【要調整】
 export const RECEIVE_SCATTER_MIN = 0.3; // 溜め最大・PERFECT時のぶれ半径

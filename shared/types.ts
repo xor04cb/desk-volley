@@ -42,6 +42,8 @@ export interface Player {
   jump: 'none' | 'attack' | 'block';
   /** この跳躍でもう打ったか */
   swung: boolean;
+  /** この tick まで動けない（カットの後の硬直。-1=なし） */
+  recoverTick: number;
   /** フライングを始めたtick（-1=していない）。起き上がるまで動けない */
   diveTick: number;
   /** 飛び込む先（体の位置） */
