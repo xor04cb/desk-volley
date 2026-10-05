@@ -673,12 +673,15 @@ export function nearestTo(s: GameState, team: TeamId, x: number, z: number, excl
   return best!;
 }
 
-export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, row: 'all' | 'front' | 'back' = 'all'): Player {
+/** 地点に最も早く着ける選手。skipBlockers ならブロックに跳んでいる選手を除く（全員跳んでいれば除かない） */
+export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, row: 'all' | 'back' = 'all', skipBlockers = false): Player {
+  if (skipBlockers && s.players.every((p) => p.team !== team || p.id === exclude || p.jump === 'block')) skipBlockers = false;
   let best: Player | null = null;
   let bt = Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.id === exclude) continue;
-    if (row !== 'all' && isFrontRow(positionOf(s, p)) !== (row === 'front')) continue;
+    if (row === 'back' && isFrontRow(positionOf(s, p))) continue;
+    if (skipBlockers && p.jump === 'block') continue;
     const t = travelTime(p, x, z);
     if (t < bt) {
       bt = t;
@@ -720,18 +723,20 @@ export function updateActors(s: GameState): void {
         if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
-        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛。相手のフェイントが前に落ちるときは前衛。
+        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛。
+        // 相手のフェイントが前に落ちるときは、ブロックに跳んでいる選手を除いて一番早く着ける選手（前衛でも後衛でも）。
         // 自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
-        let row: 'all' | 'front' | 'back' = 'all';
+        let row: 'all' | 'back' = 'all';
         let nearest = false;
+        let skipBlockers = false;
         if (ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
           if (!front) row = 'back';
-          else if (s.lastContactKind === 'feint') row = 'front';
+          else if (s.lastContactKind === 'feint') skipBlockers = true;
           else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row)).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック
