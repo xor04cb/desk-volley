@@ -60,6 +60,9 @@ export const RECEIVE_FAST_SPEED = 17;
 export const TOSS_HIT_HEIGHT = 2.2;
 export const TOSS_REACH = 1.2;
 export const SPIKE_REACH = 1.0; // 手（ジャンプ中の最高到達点付近）からの距離
+export const LANDING_MARK_RADIUS = 0.5; // 落下予測円の外径（描画にも使う）
+/** スパイクは選手の中心がこの範囲（落下予測円＋体の半分）にあれば、横方向の位置に関わらず打てる。高さは SPIKE_REACH で見る 【要調整】 */
+export const SPIKE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 
 // ---- レシーブ ----
 export const RECEIVE_APEX_MIN = 3.6; // 最高点の高さ

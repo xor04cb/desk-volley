@@ -5,6 +5,7 @@ import {
   BALL_RADIUS,
   COURT_HALF_LENGTH,
   COURT_HALF_WIDTH,
+  LANDING_MARK_RADIUS,
   NET_HEIGHT,
   NET_POST_OFFSET,
   PLAYER_HEIGHT,
@@ -188,7 +189,7 @@ export class Renderer {
     this.scene.add(this.ballShadow);
 
     this.landing = new THREE.Mesh(
-      new THREE.RingGeometry(0.3, 0.5, 32),
+      new THREE.RingGeometry(LANDING_MARK_RADIUS - 0.2, LANDING_MARK_RADIUS, 32),
       new THREE.MeshBasicMaterial({ color: COLORS.landing, transparent: true, opacity: 0.85, depthWrite: false }),
     );
     this.landing.rotation.x = -Math.PI / 2;

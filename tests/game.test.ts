@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hitPoint, startJump, updateActors } from '../shared/actions.ts';
-import { SERVE_RECEIVE_APEX_BONUS, TICK_RATE } from '../shared/constants.ts';
+import { ballAt, contactDist, hitPoint, startJump, updateActors } from '../shared/actions.ts';
+import { SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
 import { judgeOf, playerAtPosition } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
@@ -33,7 +33,7 @@ function contactTick(s: GameState, id: number, kind: ContactKind): number {
   let bt = -1;
   for (let i = 0; i < s.path.length; i++) {
     const t = s.pathTick + i + 1;
-    const d = dist3(s.path[i], hitPoint(s, p, kind, t));
+    const d = contactDist(s, p, kind, t, s.path[i]);
     if (d < best) {
       best = d;
       bt = t;
@@ -202,6 +202,42 @@ describe('溜めの効果（フェーズ3）', () => {
     expect(res[1].kind).toBe('spike');
     expect(res[2].kind).toBe('spike');
     expect(res[2].speed).toBeGreaterThan(res[1].speed);
+  });
+});
+
+describe('スパイクは落下予測円の中にいれば打てる', () => {
+  /** トスの落下地点から横に shiftX ずれた所で跳び、打点に合わせて2回目を押す */
+  const spikeWithShift = (shiftX: number) => {
+    const s = createGame({ seed: 7 });
+    const atk = s.players.find((p) => p.team === 0 && p.slot === 3)!;
+    atk.x = 0;
+    atk.z = 1.0;
+    incoming(s, atk.id, { contactsLeft: 1, lastTouch: 0, apex: 6 });
+    // 横に離れたセッターから上げた低いトス：手の高さでは、ボールはまだ円の手前にある
+    const from = v3(atk.x + 4, TOSS_HIT_HEIGHT, atk.z + 0.3);
+    launch(s.ball, from, solveByApex(from, atk.x, atk.z, 3.8));
+    computePath(s);
+    s.lastContactKind = 'toss';
+    s.tossTarget = atk.id;
+    atk.x -= shiftX; // ボールが来る側と反対へずらす（手とボールの横のずれが大きくなる）
+    const handPath = s.path.findIndex((q, i) => i > 0 && q.y < s.path[i - 1].y && q.y < 3.2);
+    while (s.tick < s.pathTick + handPath - 30) step(s);
+    press(s, 0);
+    step(s);
+    release(s, 0);
+    const t = contactTick(s, atk.id, 'spike');
+    const handDist = dist3(ballAt(s, t)!, hitPoint(s, atk, 'spike', t));
+    const ev = hitAt(s, 0, t, 0, 18);
+    const spiked = ev.some((e) => e.type === 'contact' && e.info.kind === 'spike');
+    return { handDist, spiked };
+  };
+  it('円の中なら、手とボールが離れていても打てる', () => {
+    const r = spikeWithShift(0.6);
+    expect(r.handDist).toBeGreaterThan(SPIKE_REACH); // 今までの判定なら空振り
+    expect(r.spiked).toBe(true);
+  });
+  it('円の外で手も届かなければ打てない', () => {
+    expect(spikeWithShift(1.4).spiked).toBe(false);
   });
 });
 

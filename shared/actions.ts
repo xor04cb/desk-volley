@@ -46,6 +46,7 @@ import {
   SET_TARGET,
   SPIKE_AIM_LX,
   SPIKE_CHARGE_FLOOR,
+  SPIKE_FRAME_RADIUS,
   SPIKE_REACH,
   SPIKE_SCATTER_MAX,
   SPIKE_SCATTER_MIN,
@@ -147,6 +148,20 @@ export function reachOf(kind: ContactKind, ballSpeed = 0): number {
   return SPIKE_REACH;
 }
 
+/**
+ * 打点とボールの距離（tick t）。判定のタイミング探しと届くかどうかに使う。
+ * スパイクは落下予測円の中にいれば横のずれを無視し、下りてくるボールと手の高さの差だけで見る
+ * （低いトスは、手の高さでは円の手前にあるため）。
+ */
+export function contactDist(s: GameState, p: Player, kind: ContactKind, t: number, b: Vec3): number {
+  const h = hitPoint(s, p, kind, t);
+  if (kind === 'spike' && s.predLandTick >= 0 && dist2(h.x, h.z, s.predLandX, s.predLandZ) <= SPIKE_FRAME_RADIUS) {
+    const prev = ballAt(s, t - 1);
+    if (!prev || b.y <= prev.y) return Math.abs(b.y - h.y);
+  }
+  return dist3(b, h);
+}
+
 // ---------------------------------------------------------------- タイミング判定
 
 export interface JudgeResult {
@@ -180,7 +195,7 @@ export function judgeRelease(s: GameState, p: Player, kind: ContactKind, release
   for (let t = releaseTick - W - 1; t <= releaseTick + W + 1; t++) {
     const b = ballAt(s, t);
     if (!b) continue;
-    const d = dist3(b, hitPoint(s, p, kind, t));
+    const d = contactDist(s, p, kind, t, b);
     if (d < best) {
       best = d;
       bestT = t;

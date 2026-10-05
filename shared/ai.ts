@@ -20,7 +20,7 @@ import {
   ballComingTo,
   blockerFor,
   chooseAttacker,
-  hitPoint,
+  contactDist,
   interceptPoint,
   maxReachOf,
   opponentAttacking,
@@ -34,7 +34,7 @@ import {
 import { FORMATION, isFrontRow, judgeOf, positionOf, toLocal, toWorld } from './court.ts';
 import { rand, randNormal, randRange } from './prng.ts';
 import type { ActionKind, ContactKind, GameState, Player, TeamId } from './types.ts';
-import { clamp, dist2, dist3, lerp } from './vec.ts';
+import { clamp, dist2, lerp } from './vec.ts';
 
 const AI_ATTACK_CHARGE = 0.8;
 const AI_JUMP_H = lerp(JUMP_HEIGHT_MIN, JUMP_HEIGHT_MAX, AI_ATTACK_CHARGE);
@@ -139,8 +139,8 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
   const b0 = ballAt(s, s.tick);
   const b1 = ballAt(s, s.tick + 1);
   if (!b0 || !b1) return;
-  const d0 = dist3(b0, hitPoint(s, p, kind, s.tick));
-  const d1 = dist3(b1, hitPoint(s, p, kind, s.tick + 1));
+  const d0 = contactDist(s, p, kind, s.tick, b0);
+  const d1 = contactDist(s, p, kind, s.tick + 1, b1);
   if (d0 > maxReachOf(kind, ballSpeed(s)) || d1 < d0) return;
   const dive = d0 > reachOf(kind, ballSpeed(s)); // 普通には届かない：フライング
   if (dive && rand(s.rng) >= AI.diveRate) {

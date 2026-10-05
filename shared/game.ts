@@ -23,6 +23,7 @@ import {
   chargeOf,
   checkBlocks,
   computePath,
+  contactDist,
   hitPoint,
   interceptPoint,
   judgeRelease,
@@ -460,7 +461,7 @@ export function timeToContact(s: GameState, team: TeamId): number {
   for (let i = 0; i < Math.min(s.path.length, 120); i++) {
     const t = s.pathTick + i + 1;
     if (t <= s.tick) continue;
-    const d = dist3(s.path[i], hitPoint(s, p, kind, t));
+    const d = contactDist(s, p, kind, t, s.path[i]);
     if (d < best) {
       best = d;
       bt = t;
