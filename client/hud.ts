@@ -45,6 +45,8 @@ export interface HudOptions {
   /** 残りコンタクトなどを表示するチーム（この端末の人） */
   mainTeam: TeamId;
   onPause: () => void;
+  /** 練習中は得点の代わりに練習の名前を出す */
+  practiceLabel?: string;
 }
 
 export class Hud {
@@ -74,6 +76,10 @@ export class Hud {
     this.s1 = el('span', 'pts', this.score, '0');
     el('span', 'team-name t1', this.score, opts.names[1]);
     this.setLabel = el('div', 'hud-set', top, 'SET 1');
+    if (opts.practiceLabel) {
+      this.score.style.display = 'none';
+      this.setLabel.textContent = `練習：${opts.practiceLabel}`;
+    }
 
     this.contacts = el('div', 'hud-contacts', this.root);
     this.serveTimer = el('div', 'hud-serve', this.root);
@@ -85,7 +91,7 @@ export class Hud {
   update(s: GameState, actions: [ActionKind, ActionKind]): void {
     this.s0.textContent = String(s.teams[0].score);
     this.s1.textContent = String(s.teams[1].score);
-    this.setLabel.textContent = `SET ${s.set}`;
+    if (!this.opts.practiceLabel) this.setLabel.textContent = `SET ${s.set}`;
     s.servingTeam === 0 ? this.score.classList.add('serve0') : this.score.classList.remove('serve0');
     s.servingTeam === 1 ? this.score.classList.add('serve1') : this.score.classList.remove('serve1');
 

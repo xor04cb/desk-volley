@@ -1,5 +1,5 @@
 // タイトル・設定・一時停止・試合終了の画面
-import type { GameState, Rules } from '../shared/types.ts';
+import type { GameState, PracticeKind, Rules, TossZone } from '../shared/types.ts';
 import type { Settings } from './settings.ts';
 
 function panel(ui: HTMLElement, cls = ''): HTMLDivElement {
@@ -18,10 +18,11 @@ function button(parent: HTMLElement, text: string, onClick: () => void, cls = 'b
   return b;
 }
 
-export function showTitle(ui: HTMLElement, h: { cpu: () => void; online: () => void; settings: () => void }): void {
+export function showTitle(ui: HTMLElement, h: { cpu: () => void; practice: () => void; online: () => void; settings: () => void }): void {
   const p = panel(ui, 'title');
   p.innerHTML = '<h1>卓上バレー</h1><p class="sub">ACTIONボタンひとつで<br>レシーブ・トス・スパイク</p>';
   button(p, 'CPUと対戦', h.cpu, 'btn wide primary');
+  button(p, '練習', h.practice);
   button(p, 'オンライン対戦', h.online);
   button(p, 'ルール設定', h.settings, 'btn wide ghost');
   const help = document.createElement('p');
@@ -92,6 +93,51 @@ export function showSettings(ui: HTMLElement, rules: Rules, done: (r: Rules) => 
   button(p, '決定', () => done(r), 'btn wide primary');
 }
 
+export const PRACTICE_LABEL: Record<PracticeKind, string> = {
+  serveCut: 'サーブカット',
+  serveCutSpike: 'サーブカット→スパイク',
+  spikeReceive: 'スパイクレシーブ',
+  spike: 'スパイク',
+  serve: 'サーブ',
+};
+
+const PRACTICE_HELP: Record<PracticeKind, string> = {
+  serveCut: '相手のサーブをカットする',
+  serveCutSpike: 'カットすると味方がトスを上げる。跳んで打つ',
+  spikeReceive: '相手のスパイク・フェイントを拾う',
+  spike: '味方のトスを跳んで打つ',
+  serve: '自分のサーブを打ち続ける',
+};
+
+/** 練習メニュー：種類とトスの向きを選ぶ */
+export function showPracticeMenu(
+  ui: HTMLElement,
+  zone: TossZone | 'random',
+  h: { start: (kind: PracticeKind, zone: TossZone | 'random') => void; back: () => void },
+): void {
+  ui.querySelectorAll('.menu').forEach((m) => m.remove());
+  const p = panel(ui, 'practice');
+  p.innerHTML = '<h2>練習</h2>';
+  let z = zone;
+  choice<TossZone | 'random'>(p, 'トス', z, [['left', 'レフト'], ['center', 'センター'], ['right', 'ライト'], ['random', 'ランダム']], (v) => (z = v));
+  for (const kind of Object.keys(PRACTICE_LABEL) as PracticeKind[]) {
+    const b = button(p, PRACTICE_LABEL[kind], () => h.start(kind, z));
+    el(b, 'small', PRACTICE_HELP[kind]);
+  }
+  const note = document.createElement('p');
+  note.className = 'help';
+  note.textContent = '1本ずつ区切って繰り返します。点数は数えません。トスの向きはスパイクのある練習で使います。';
+  p.appendChild(note);
+  button(p, 'もどる', h.back, 'btn wide ghost');
+}
+
+function el(parent: HTMLElement, tag: string, text: string): HTMLElement {
+  const e = document.createElement(tag);
+  e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+
 function setTable(s: GameState): string {
   const rows: string[] = [];
   const n = Math.max(s.rules.sets, 1);
@@ -106,10 +152,10 @@ export function showPauseMenu(
   ui: HTMLElement,
   s: GameState,
   settings: Settings,
-  h: { resume: () => void; retry: () => void; title: () => void; changed: (s: Settings) => void },
+  h: { resume: () => void; retry: () => void; title: () => void; changed: (s: Settings) => void; practiceMenu?: () => void },
 ): void {
   const p = panel(ui, 'pause');
-  p.innerHTML = `<h2>一時停止</h2>${setTable(s)}`;
+  p.innerHTML = s.practice ? `<h2>一時停止</h2><p class="sub">練習：${PRACTICE_LABEL[s.practice.kind]}</p>` : `<h2>一時停止</h2>${setTable(s)}`;
   const st = { ...settings };
   choice(p, '操作パッド', st.showPad, [[true, 'ON'], [false, 'OFF']], (v) => {
     st.showPad = v;
@@ -123,7 +169,8 @@ export function showPauseMenu(
     p.remove();
     h.resume();
   }, 'btn wide primary');
-  button(p, 'リトライ', h.retry);
+  if (h.practiceMenu) button(p, '練習を選ぶ', h.practiceMenu);
+  else button(p, 'リトライ', h.retry);
   button(p, 'タイトルへ', h.title, 'btn wide ghost');
 }
 

@@ -178,5 +178,27 @@ export interface GameState {
   aiServeTick: number;
   /** AIのジャンプ予定tick（チームごと。-1=なし） */
   aiJumpTick: [number, number];
+  /** 練習モード（null=試合） */
+  practice: PracticeState | null;
+  /** このtickのイベント（step の後に読む）。入力（press/release）で出たものも次の step で一緒に渡す */
   events: GameEvent[];
+  /** 直前の step で出たイベントの数（次の step の始めに消す分） */
+  stepEventCount: number;
+}
+
+/** 練習の種類 */
+export type PracticeKind = 'serveCut' | 'serveCutSpike' | 'spikeReceive' | 'spike' | 'serve';
+export type TossZone = 'left' | 'center' | 'right';
+
+export interface PracticeState {
+  kind: PracticeKind;
+  /** 自動トスを上げる向き（スパイクのある練習） */
+  tossZone: TossZone | 'random';
+  /** 今の1本で自動トスを上げる味方セッター（-1=未定）と、打つ選手 */
+  setter: number;
+  attacker: number;
+  /** 1本が終わり、次の1本を始める tick（-1=続いている） */
+  nextRepTick: number;
+  /** CPUを止めているチーム（1本が終わった後や、サーブ練習の相手） */
+  aiOff: [boolean, boolean];
 }

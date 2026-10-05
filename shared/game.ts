@@ -44,8 +44,18 @@ import {
 import { formationSpot, moveToward, runAI, type Target } from './ai.ts';
 import { clampToSide, isFrontRow, playerAtPosition, positionOf, serveSpot, toLocal, toWorld } from './court.ts';
 import { makeBall, sideOf } from './physics.ts';
+import {
+  autoTossActive,
+  practiceActors,
+  practiceLanded,
+  practiceMoveTarget,
+  practicePostStep,
+  practicePreMove,
+  practiceServingTeam,
+  setupRep,
+} from './practice.ts';
 import { makeRng, rand } from './prng.ts';
-import type { ActionKind, ContactKind, GameState, Player, Rules, Team, TeamId } from './types.ts';
+import type { ActionKind, ContactKind, GameState, Player, PracticeKind, Rules, Team, TeamId, TossZone } from './types.ts';
 import { DEFAULT_RULES } from './types.ts';
 import { clamp, dist3, v3 } from './vec.ts';
 
@@ -59,6 +69,8 @@ export interface GameOptions {
   seed?: number;
   /** 人が操作するチーム */
   humans?: [boolean, boolean];
+  /** 練習モード（チーム0が人、チーム1がCPU） */
+  practice?: { kind: PracticeKind; tossZone?: TossZone | 'random' };
 }
 
 function makeTeam(human: boolean): Team {
@@ -128,7 +140,11 @@ export function createGame(opts: GameOptions = {}): GameState {
     setPending: false,
     aiServeTick: 0,
     aiJumpTick: [-1, -1],
+    practice: opts.practice
+      ? { kind: opts.practice.kind, tossZone: opts.practice.tossZone ?? 'left', setter: -1, attacker: -1, nextRepTick: -1, aiOff: [false, false] }
+      : null,
     events: [],
+    stepEventCount: 0,
   };
   startServe(s);
   recordHistory(s);
@@ -137,6 +153,7 @@ export function createGame(opts: GameOptions = {}): GameState {
 
 /** サーブの準備：全員を定位置へ、ボールをサーバーへ */
 export function startServe(s: GameState): void {
+  if (s.practice) s.servingTeam = practiceServingTeam(s.practice.kind);
   if (s.setPending) {
     s.setPending = false;
     s.set++;
@@ -182,6 +199,7 @@ export function startServe(s: GameState): void {
   holdBall(s);
   computePath(s);
   updateActors(s);
+  if (s.practice) setupRep(s); // 練習：1本の状況を作る
 }
 
 function holdBall(s: GameState): void {
@@ -247,7 +265,6 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
   }
 }
 
-/** いまボタンを離したら何が起きるか（HUD表示にも使う） */
 /** フライングの向き（ワールド座標）：スティック → 走っていた向き → ネット方向 */
 function diveDirection(p: Player, mx: number, mf: number): { x: number; z: number } {
   if (Math.hypot(mx, mf) > 0.2) return toWorld(p.team, mx, -mf);
@@ -255,11 +272,13 @@ function diveDirection(p: Player, mx: number, mf: number): { x: number; z: numbe
   return toWorld(p.team, 0, -1);
 }
 
+/** いまボタンを離したら何が起きるか（HUD表示にも使う） */
 export function currentAction(s: GameState, team: TeamId): ActionKind {
   const t = s.teams[team];
   const p = s.players[t.controlled];
   if (s.phase === 'serve') return s.servingTeam === team && s.serveTossed && p.id === s.server ? 'serve' : 'none';
   if (s.phase !== 'rally') return 'none';
+  if (team === 0 && autoTossActive(s)) return 'none'; // 練習：トスは味方セッターが自動で上げる
   if (p.diveTick >= 0) return 'none'; // フライング中は何もできない
   if (p.jump === 'attack') return p.swung ? 'none' : 'spike';
   if (p.jump === 'block') return 'none';
@@ -279,6 +298,7 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
     const high = interceptPoint(s, team, STANDING_REACH + 0.3);
     return high ? 'jump' : 'free';
   }
+  if (team === 0 && s.practice?.kind === 'spikeReceive') return 'none'; // 練習：拾う練習なのでブロックはしない
   if (opponentAttacking(s, team) || toLocal(team, p.x, p.z).lz < 1.6) return 'block';
   return 'none';
 }
@@ -286,7 +306,8 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
 // ---------------------------------------------------------------- 1tick
 
 export function step(s: GameState): void {
-  s.events.length = 0;
+  // 前の step のイベントは読み終わっているので消す。その後の入力（press/release）で出たイベントは残して、この step の分と一緒に渡す
+  s.events.splice(0, s.stepEventCount);
 
   // 予約された打球（ボタンを早めに離した場合など）
   if (s.pending && s.pending.tick <= s.tick) {
@@ -300,6 +321,7 @@ export function step(s: GameState): void {
   }
 
   if (s.phase === 'serve') stepServe(s);
+  practicePreMove(s);
   movePlayers(s);
   if (s.ball.mode === 'flying') advanceBall(s, s.tick);
   else if (s.phase === 'serve' && !s.serveTossed) holdBall(s);
@@ -316,7 +338,10 @@ export function step(s: GameState): void {
       s.phaseTick = s.tick;
     } else startServe(s);
   }
+  if (practicePostStep(s)) startServe(s); // 練習：次の1本
+  else practiceActors(s);
 
+  s.stepEventCount = s.events.length;
   s.tick++;
   recordHistory(s);
 }
@@ -333,7 +358,7 @@ function stepServe(s: GameState): void {
 
 function movePlayers(s: GameState): void {
   const aiTargets: (Target | null)[] = [null, null];
-  for (const T of [0, 1] as TeamId[]) if (!s.teams[T].human) aiTargets[T] = runAI(s, T);
+  for (const T of [0, 1] as TeamId[]) if (!s.teams[T].human && !s.practice?.aiOff[T]) aiTargets[T] = runAI(s, T);
 
   for (const p of s.players) {
     const team = s.teams[p.team];
@@ -388,7 +413,8 @@ function movePlayers(s: GameState): void {
       p.x = nx;
       p.z = nz;
     } else {
-      const target = isActor && !team.human && aiTargets[p.team] ? aiTargets[p.team]! : isActor && !team.human ? null : formationSpot(s, p);
+      const target =
+        practiceMoveTarget(s, p) ?? (isActor && !team.human && aiTargets[p.team] ? aiTargets[p.team]! : isActor && !team.human ? null : formationSpot(s, p));
       if (target) moveToward(p, target, PLAYER_SPEED * AI.speedFactor, DT);
       else {
         p.vx = 0;
@@ -418,6 +444,7 @@ function resolveLanding(s: GameState): void {
   const z = s.landZ;
   const side = sideOf(z);
   const inCourt = Math.abs(x) <= COURT_HALF_WIDTH + BALL_RADIUS && Math.abs(z) <= COURT_HALF_LENGTH + BALL_RADIUS;
+  if (s.practice) return practiceLanded(s); // 練習は点数を数えない（落ちたボールは打てないよう landTick は残す）
   s.landTick = -1;
   if (s.lastContactKind === null) return awardPoint(s, (1 - s.servingTeam) as TeamId, 'serveMiss');
   const last = s.lastTouchTeam === -1 ? s.servingTeam : s.lastTouchTeam;

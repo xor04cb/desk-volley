@@ -105,6 +105,25 @@ describe('タイミング判定（フェーズ4）', () => {
   });
 });
 
+describe('イベントの受け渡し', () => {
+  it('離した瞬間の判定（judge）も、画面と同じ順（入力→step→読む）で受け取れる', () => {
+    const s = createGame({ seed: 1, rules: { serveTime: 30 } });
+    const seen: string[] = [];
+    const tick = (input?: () => void) => {
+      input?.();
+      step(s);
+      for (const e of s.events) seen.push(e.type);
+    };
+    for (let i = 0; i < 5; i++) tick();
+    tick(() => press(s, 0));
+    for (let i = 0; i < 15; i++) tick();
+    tick(() => release(s, 0));
+    for (let i = 0; i < 30; i++) tick();
+    expect(seen.filter((t) => t === 'judge')).toHaveLength(1);
+    expect(seen.filter((t) => t === 'contact')).toHaveLength(1);
+  });
+});
+
 describe('カットの後の硬直', () => {
   it('カットした選手は RECEIVE_RECOVER_TICKS の間動けず、その後は動ける', () => {
     const s = createGame({ seed: 3 });

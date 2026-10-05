@@ -14,6 +14,7 @@ npx tsc --noEmit # 型チェック
 ```
 
 - URLで直接CPU対戦を開始：`?mode=cpu`、`&debug` でデバッグ表示ON
+- 練習を直接開始：`?mode=practice&drill=spike&toss=left`（drill は serveCut / serveCutSpike / spikeReceive / spike / serve）
 - ブラウザのコンソールで `__dv` に試合のセッションが入る。`__dv.tick(n)` で n tick 進められる（画面が裏にあって描画が止まるときの確認用）
 - CPU同士の試合をヘッドレスで回す：`npx tsx tests/sim.ts <seed>`（統計が出る。調整用）
 
@@ -46,6 +47,7 @@ shared/   ゲームロジック（描画・通信に依存しない）
   actions.ts    打球・判定（巻き戻しあり）・ジャンプ・ブロック・操作選手の自動切り替え
   ai.ts         CPUの位置取りと打球
   game.ts       1tickの進行、入力（press/release/setStick）、得点・セット
+  practice.ts   練習モード（1本ごとに状況を作り直す、自動トス）
   types.ts      状態の型、ルールの既定値
 client/   Three.js 描画（renderer.ts）、入力（input.ts）、HUD（hud.ts）、画面遷移（main.ts, menus.ts）
 server/   未着手

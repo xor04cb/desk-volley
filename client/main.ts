@@ -1,12 +1,12 @@
 // 画面遷移（タイトル・設定・試合）とローカル対戦のゲームループ
 import { DT } from '../shared/constants.ts';
 import { createGame, press, release, setStick, step } from '../shared/game.ts';
-import { DEFAULT_RULES, type GameEvent, type GameState, type Rules, type TeamId } from '../shared/types.ts';
+import { DEFAULT_RULES, type GameEvent, type GameState, type PracticeKind, type Rules, type TeamId, type TossZone } from '../shared/types.ts';
 import { Hud, ACTION_LABEL } from './hud.ts';
 import { combine, Keyboard, KEYS_ANY, preventBrowserZoom, TouchPad, type PadState } from './input.ts';
 import { Renderer } from './renderer.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
-import { showMatchEnd, showPauseMenu, showSettings, showTitle } from './menus.ts';
+import { PRACTICE_LABEL, showMatchEnd, showPauseMenu, showPracticeMenu, showSettings, showTitle } from './menus.ts';
 import { drawState, poseOf, showEvents, type ViewOptions } from './view.ts';
 import { startOnline } from './online.ts';
 
@@ -48,11 +48,14 @@ class LocalSession {
   ended = false;
   view: ViewOptions;
 
-  constructor(readonly rules: Rules) {
-    this.s = createGame({ rules, seed: (Date.now() & 0x7fffffff) >>> 0, humans: [true, false] });
+  constructor(
+    readonly rules: Rules,
+    readonly practice?: { kind: PracticeKind; tossZone: TossZone | 'random' },
+  ) {
+    this.s = createGame({ rules, seed: (Date.now() & 0x7fffffff) >>> 0, humans: [true, false], practice });
     renderer.view = 0;
     this.view = { humanTeam: 0 };
-    this.hud = new Hud(ui, { names: NAMES, mainTeam: 0, onPause: () => this.pause() });
+    this.hud = new Hud(ui, { names: NAMES, mainTeam: 0, onPause: () => this.pause(), practiceLabel: practice && PRACTICE_LABEL[practice.kind] });
     this.ctrl = new Controller(0, new TouchPad(ui), new Keyboard(KEYS_ANY));
     this.ctrl.pad.setVisible(settings.showPad);
     this.hud.debugOn = settings.debug;
@@ -75,6 +78,7 @@ class LocalSession {
       },
       retry: () => restart(this.rules),
       title: () => goTitle(),
+      practiceMenu: this.practice ? () => goPractice() : undefined,
       changed: (st) => {
         settings = st;
         saveSettings(st);
@@ -136,11 +140,27 @@ function restart(rules: Rules): void {
   session = new LocalSession(rules);
 }
 
+let tossZone: TossZone | 'random' = 'left';
+
+function startPractice(kind: PracticeKind, zone: TossZone | 'random'): void {
+  tossZone = zone;
+  clearUI();
+  session = new LocalSession(settings.rules, { kind, tossZone: zone });
+}
+
+function goPractice(): void {
+  clearUI();
+  renderer.view = 0;
+  showPracticeMenu(ui, tossZone, { start: startPractice, back: goTitle });
+  idle();
+}
+
 function goTitle(): void {
   clearUI();
   renderer.view = 0;
   showTitle(ui, {
     cpu: () => restart(settings.rules),
+    practice: goPractice,
     online: () => {
       clearUI();
       session = startOnline(ui, renderer, settings, goTitle);
@@ -181,7 +201,11 @@ function idle(): void {
   requestAnimationFrame(loop);
 }
 
-// URL で直接CPU対戦を始められる（?mode=cpu）
+// URL で直接始められる（?mode=cpu、?mode=practice&drill=spike など）
 const q = new URLSearchParams(location.search);
+const drill = q.get('drill') as PracticeKind | null;
 if (q.get('mode') === 'cpu') restart(settings.rules);
-else goTitle();
+else if (q.get('mode') === 'practice') {
+  if (drill && drill in PRACTICE_LABEL) startPractice(drill, (q.get('toss') as TossZone | 'random' | null) ?? 'left');
+  else goPractice();
+} else goTitle();

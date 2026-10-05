@@ -143,6 +143,18 @@ export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）
 export const HISTORY_TICKS = 30; // ボール・選手の位置を保存するtick数
 
+// ---- 練習モード ----
+export const PRACTICE = {
+  serveDelay: 0.8, // CPUがサーブを打つまで（秒）
+  afterTouch: 1.2, // カット・レシーブした後、次の1本までの秒数
+  afterAttack: 1.5, // スパイクを打った後、次の1本までの秒数
+  afterServe: 2.5, // サーブを打った後、次の1本までの秒数（先に落ちればそちら）
+  afterLand: 0.8, // ボールが落ちてから次の1本までの秒数
+  passApex: 4.2, // スパイク練習でセッターへ返すパスの最高点
+  tossApex: 5.0, // スパイクレシーブ練習で相手が上げるトスの最高点
+  tossCharge: 0.6, // 自動トスの溜め量（最高点の高さが決まる）
+};
+
 // ---- AI ----
 export const AI = {
   timingSigma: 0.07, // AIの押すタイミングのぶれ（秒）【要調整】

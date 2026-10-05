@@ -28,6 +28,7 @@ html, body {
 }
 .btn:active { background: rgba(255,255,255,.22); }
 .btn.wide { display: block; width: 100%; margin-top: 10px; padding: 13px; font-size: 16px; }
+.btn.wide small { display: block; margin-top: 3px; font-size: 12px; opacity: 0.7; font-weight: normal; }
 .btn.primary { background: var(--accent); color: #2a1d00; border-color: var(--accent); font-weight: 700; }
 .btn.ghost { background: transparent; }
 .btn.small { padding: 6px 12px; font-size: 14px; border-radius: 9px; }
