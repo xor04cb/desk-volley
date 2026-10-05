@@ -385,8 +385,8 @@ describe('レシーブの担当', () => {
     const { s, front } = setup(2);
     expect(s.teams[0].controlled).toBe(front.id);
   });
-  /** ネット際 (0, 1.5) に落ちるボール。後衛中央の方が近く、前衛中央は少し遠い */
-  const nearNet = (ownBlock: boolean) => {
+  /** ネット際 (0, 1.5) に落ちるボール。前衛中央・後衛中央をそれぞれ指定の位置に置く */
+  const nearNet = (ownBlock: boolean, frontAt: [number, number], backAt: [number, number], frontInAir = false) => {
     const s = createGame({ seed: 5 });
     const back = playerAtPosition(s, 0, 6);
     const front = playerAtPosition(s, 0, 3);
@@ -394,19 +394,25 @@ describe('レシーブの担当', () => {
     back.z = 1.5;
     incoming(s, back.id, { lastTouch: ownBlock ? 0 : 1 });
     if (ownBlock) s.lastContactKind = 'block';
-    back.x = 0.5;
-    back.z = 2.3;
-    front.x = 1.8;
-    front.z = 1.5;
+    [back.x, back.z] = backAt;
+    [front.x, front.z] = frontAt;
+    if (frontInAir) {
+      front.y = 1.0; // ブロックで跳んでいて、着地まで約0.5秒
+      front.vy = 0;
+    }
     updateActors(s);
     return { s, back, front };
   };
-  it('自チームのブロックで手前に落ちてくるボールは、後衛の方が近くても前衛が取る', () => {
-    const { s, front } = nearNet(true);
+  it('自チームのブロック後に手前に落ちるボール：後衛の方が近ければ後衛が取る', () => {
+    const { s, back } = nearNet(true, [1.8, 1.5], [0.5, 2.3]);
+    expect(s.teams[0].controlled).toBe(back.id);
+  });
+  it('自チームのブロック後に手前に落ちるボール：まだ空中のブロッカーでも、一番近ければ取る', () => {
+    const { s, front } = nearNet(true, [1.0, 1.5], [0, 3.0], true);
     expect(s.teams[0].controlled).toBe(front.id);
   });
-  it('相手から来た手前のボールは、今までどおり一番早く着ける選手', () => {
-    const { s, back } = nearNet(false);
+  it('相手から来た手前のボールは、今までどおり一番早く着ける選手（空中の選手は着地を待つ分遅い）', () => {
+    const { s, back } = nearNet(false, [1.0, 1.5], [0, 3.0], true);
     expect(s.teams[0].controlled).toBe(back.id);
   });
   it('フェイントは前に落ちても後衛が拾う', () => {

@@ -654,12 +654,27 @@ export function travelTime(p: Player, x: number, z: number): number {
   return air + dist2(p.x, p.z, x, z) / PLAYER_SPEED;
 }
 
-export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, row: 'all' | 'front' | 'back' = 'all'): Player {
+/** 地点に（空中かどうかに関わらず）距離が最も近い選手 */
+export function nearestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number): Player {
+  let best: Player | null = null;
+  let bd = Infinity;
+  for (const p of s.players) {
+    if (p.team !== team || p.id === exclude) continue;
+    const d = dist2(p.x, p.z, x, z);
+    if (d < bd) {
+      bd = d;
+      best = p;
+    }
+  }
+  return best!;
+}
+
+export function fastestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number, row: 'all' | 'back' = 'all'): Player {
   let best: Player | null = null;
   let bt = Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.id === exclude) continue;
-    if (row !== 'all' && isFrontRow(positionOf(s, p)) !== (row === 'front')) continue;
+    if (row === 'back' && isFrontRow(positionOf(s, p))) continue;
     const t = travelTime(p, x, z);
     if (t < bt) {
       bt = t;
@@ -701,16 +716,17 @@ export function updateActors(s: GameState): void {
         if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
-        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛、相手のフェイントも後衛、自チームのブロック後に前へ落ちるボールは近い前衛
+        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛、相手のフェイントも後衛。
+        // 自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
-        let row: 'all' | 'front' | 'back' = 'all';
+        let row: 'all' | 'back' = 'all';
+        let nearest = false;
         if (ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
-          const ownBlock = s.lastTouchTeam === T && s.lastContactKind === 'block';
           if (!front || s.lastContactKind === 'feint') row = 'back';
-          else if (ownBlock) row = 'front';
+          else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, row).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック
