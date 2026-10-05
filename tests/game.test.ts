@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { ballAt, contactDist, hitPoint, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
-import { RECEIVE_RECOVER_TICKS, SERVE_RECEIVE_APEX_BONUS, SPIKE_REACH, TICK_RATE, TOSS_HIT_HEIGHT } from '../shared/constants.ts';
-import { isFrontRow, judgeOf, playerAtPosition, positionOf } from '../shared/court.ts';
+import { ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import {
+  BLOCK_JUMP_MAX,
+  RECEIVE_RECOVER_TICKS,
+  SERVE_RECEIVE_APEX_BONUS,
+  SET_TARGET,
+  SPIKE_REACH,
+  STANDING_REACH,
+  TICK_RATE,
+  TOSS_HIT_HEIGHT,
+  TOSS_TARGET_LZ,
+} from '../shared/constants.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, toWorld } from '../shared/court.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -121,6 +131,50 @@ describe('イベントの受け渡し', () => {
     for (let i = 0; i < 30; i++) tick();
     expect(seen.filter((t) => t === 'judge')).toHaveLength(1);
     expect(seen.filter((t) => t === 'contact')).toHaveLength(1);
+  });
+});
+
+describe('ブロックの後の操作', () => {
+  it('ブロックで相手コートへ返したら、相手が次にトスを上げるまでブロックした前衛を操作する', () => {
+    const s = createGame({ seed: 2, rules: { feint: false } });
+    for (const p of s.players) {
+      const [lx, lz] = (p.team === 0 ? FORMATION.defense : FORMATION.offense)[positionOf(s, p)];
+      const w = toWorld(p.team, lx, lz);
+      p.x = w.x;
+      p.z = w.z;
+    }
+    // 相手のセンターへトスが上がったところ
+    const atk = playerAtPosition(s, 1, 3);
+    const f = toWorld(1, SET_TARGET.lx, SET_TARGET.lz);
+    const t = toWorld(1, 0, TOSS_TARGET_LZ);
+    const from = v3(f.x, TOSS_HIT_HEIGHT, f.z);
+    launch(s.ball, from, solveByApex(from, t.x, t.z, 5));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'toss';
+    s.tossTarget = atk.id;
+    s.teams[1].contactsLeft = 1;
+    s.aiReadyTick = [s.tick, s.tick];
+    computePath(s);
+    updateActors(s);
+    const blocker = s.players[s.teams[0].controlled];
+    blocker.x = t.x;
+    const hit = interceptPoint(s, 1, STANDING_REACH + 0.9)!;
+    const jumpAt = hit.tick - Math.round(riseTime(BLOCK_JUMP_MAX) * TICK_RATE) - 4;
+    let blocked = false;
+    const after: number[] = [];
+    for (let i = 0; i < 300 && s.phase === 'rally'; i++) {
+      if (s.tick === jumpAt - 30) press(s, 0);
+      if (s.tick === jumpAt) release(s, 0);
+      step(s);
+      if (s.events.some((e) => e.type === 'block')) blocked = true;
+      if (s.events.some((e) => e.type === 'contact' && e.info.kind === 'toss')) break;
+      if (blocked) after.push(s.teams[0].controlled);
+    }
+    expect(blocked).toBe(true);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((id) => id === blocker.id)).toBe(true);
   });
 });
 

@@ -741,6 +741,10 @@ export function updateActors(s: GameState): void {
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック
       team.controlled = blockerFor(s, T).id;
+    } else if (s.lastTouchTeam === T && s.lastContactKind === 'block' && team.lastToucher >= 0) {
+      // 自チームのブロックで相手コートへ返した：ブロックした前衛をそのまま操作する
+      // （相手のスパイクの瞬間にレシーブ役の後衛へ切り替わっているので戻す）
+      team.controlled = team.lastToucher;
     } else if (s.lastTouchTeam === T && s.lastContactKind === 'serve') {
       // サーブを打った後は前衛を操作する（サーバーは自動で守備位置へ戻る）
       team.controlled = blockerFor(s, T).id;
