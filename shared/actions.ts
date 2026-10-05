@@ -678,10 +678,11 @@ export function updateActors(s: GameState): void {
         const ip = interceptPoint(s, T, TOSS_HIT_HEIGHT);
         if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan).id;
       } else {
-        // 相手からのボールは、前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛がレシーブする
+        // 相手からのボールは、前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛がレシーブする。フェイントは前に落ちても後衛が拾う
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
         const fromOpp = team.contactsLeft === 3;
-        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, fromOpp && toLocal(T, ip.x, ip.z).lz > FRONT_RECEIVE_DEPTH).id;
+        const backOnly = fromOpp && (s.lastContactKind === 'feint' || (ip !== null && toLocal(T, ip.x, ip.z).lz > FRONT_RECEIVE_DEPTH));
+        if (ip) team.controlled = fastestTo(s, T, ip.x, ip.z, doubleBan, backOnly).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

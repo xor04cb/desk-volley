@@ -324,7 +324,7 @@ describe('ツーアタックの誤操作防止', () => {
 
 describe('レシーブの担当', () => {
   /** 前衛右の選手を (lx=3, lz) に置き、その足元へ相手からボールを送る */
-  const setup = (lz: number) => {
+  const setup = (lz: number, feint = false) => {
     const s = createGame({ seed: 5 });
     const front = playerAtPosition(s, 0, 2);
     const back = playerAtPosition(s, 0, 1); // 後衛右
@@ -333,6 +333,7 @@ describe('レシーブの担当', () => {
     back.x = 3;
     back.z = 7;
     incoming(s, front.id);
+    if (feint) s.lastContactKind = 'feint';
     updateActors(s);
     return { s, front, back };
   };
@@ -343,6 +344,10 @@ describe('レシーブの担当', () => {
   it('前のボールは近い前衛がレシーブする', () => {
     const { s, front } = setup(2);
     expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('フェイントは前に落ちても後衛が拾う', () => {
+    const { s, back } = setup(2, true);
+    expect(s.teams[0].controlled).toBe(back.id);
   });
 });
 
