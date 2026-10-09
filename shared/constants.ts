@@ -125,6 +125,14 @@ export const BLOCK_HAND_TOP = 2.55; // 足元からの高さ（手の上端）
 export const BLOCK_HALF_WIDTH = 0.45;
 export const BLOCK_DEPTH = 0.45; // ネットから手が出る奥行き
 export const BLOCK_RESTITUTION = 0.45;
+// ワンタッチ：手の上の方・左右の端に当たると勢いが死に、ブロック側のコートへ拾いやすいボールが上がる 【要調整】
+export const BLOCK_TOUCH_TOP = 0.32; // 手の上端からこの範囲に当たるとワンタッチ(m)
+export const BLOCK_TOUCH_EDGE = 0.25; // 手の左右の端からこの範囲に当たるとワンタッチ(m)
+export const BLOCK_TOUCH_APEX_MIN = 3.4; // ワンタッチで上がるボールの最高点
+export const BLOCK_TOUCH_APEX_MAX = 4.4;
+export const BLOCK_TOUCH_LZ_MIN = 3; // 落ちる深さ（ブロック側のネットから）
+export const BLOCK_TOUCH_LZ_MAX = 8;
+export const BLOCK_TOUCH_SPREAD = 1.5; // 左右のぶれ(m)。サイドライン近くではコートの外へ出ることもある
 
 // ---- フライング（届かないボールに飛び込むレシーブ） ----
 export const DIVE_REACH = 1.4; // 普通に届く距離より、さらにこれだけ遠くまで届く(m) 【要調整】

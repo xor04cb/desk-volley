@@ -9,7 +9,15 @@ import {
   BLOCK_JUMP_MAX,
   BLOCK_JUMP_MIN,
   BLOCK_RESTITUTION,
+  BLOCK_TOUCH_APEX_MAX,
+  BLOCK_TOUCH_APEX_MIN,
+  BLOCK_TOUCH_EDGE,
+  BLOCK_TOUCH_LZ_MAX,
+  BLOCK_TOUCH_LZ_MIN,
+  BLOCK_TOUCH_SPREAD,
+  BLOCK_TOUCH_TOP,
   CHARGE_MAX,
+  COURT_HALF_WIDTH,
   DIVE_FRAME_RADIUS,
   DIVE_HAND_OFFSET,
   DIVE_REACH,
@@ -604,21 +612,32 @@ export function checkBlocks(s: GameState): void {
     if (blz < -0.35 || blz > BLOCK_DEPTH) continue;
     if (Math.abs(b.x - p.x) > BLOCK_HALF_WIDTH + BALL_RADIUS) continue;
     if (b.y < p.y + BLOCK_HAND_BOTTOM - BALL_RADIUS || b.y > p.y + BLOCK_HAND_TOP + BALL_RADIUS) continue;
-    applyBlock(s, p);
+    // 手の上の方か左右の端に当たればワンタッチ、真ん中なら跳ね返す
+    const top = b.y > p.y + BLOCK_HAND_TOP + BALL_RADIUS - BLOCK_TOUCH_TOP;
+    const edge = Math.abs(b.x - p.x) > BLOCK_HALF_WIDTH + BALL_RADIUS - BLOCK_TOUCH_EDGE;
+    applyBlock(s, p, top || edge);
     return;
   }
 }
 
-function applyBlock(s: GameState, p: Player): void {
+function applyBlock(s: GameState, p: Player, touch: boolean): void {
   const v = s.ball.vel;
   const T = p.team;
   const attacker = (1 - T) as TeamId;
-  const top = s.ball.pos.y > p.y + BLOCK_HAND_TOP - 0.08;
-  if (top) {
-    // 手の上端に当たった：勢いが落ちて自陣側へ（ワンタッチ）
-    v.z *= 0.45;
-    v.y = Math.abs(v.y) * 0.3 + 2.5;
-    v.x += randRange(s.rng, -1, 1);
+  if (touch) {
+    // ワンタッチ：勢いが死に、ブロック側のコートへ山なりで上がる（打球の左右の向きは少し残る）
+    const b = s.ball.pos;
+    const l = toLocal(T, b.x, b.z);
+    const lv = toLocal(T, v.x, v.z);
+    const lz = randRange(s.rng, BLOCK_TOUCH_LZ_MIN, BLOCK_TOUCH_LZ_MAX);
+    const drift = lv.lz > 1 ? (lv.lx / lv.lz) * lz * 0.5 : 0;
+    const lx = clamp(l.lx + drift + randRange(s.rng, -BLOCK_TOUCH_SPREAD, BLOCK_TOUCH_SPREAD), -COURT_HALF_WIDTH - 1, COURT_HALF_WIDTH + 1);
+    const t = toWorld(T, lx, lz);
+    const apex = randRange(s.rng, BLOCK_TOUCH_APEX_MIN, BLOCK_TOUCH_APEX_MAX);
+    const nv = solveByApex(b, t.x, t.z, apex);
+    v.x = nv.x;
+    v.y = nv.y;
+    v.z = nv.z;
   } else {
     v.z = -v.z * BLOCK_RESTITUTION;
     v.y = -Math.abs(v.y) * 0.3 - 1;
@@ -637,7 +656,7 @@ function applyBlock(s: GameState, p: Player): void {
   s.aiMissTick = [-1, -1];
   s.aiReadyTick = [s.tick + 6, s.tick + 6];
   computePath(s, s.tick + 1);
-  s.events.push({ type: 'block', player: p.id });
+  s.events.push({ type: 'block', player: p.id, touch });
   updateActors(s);
 }
 

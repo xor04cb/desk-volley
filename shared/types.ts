@@ -129,7 +129,7 @@ export type GameEvent =
   | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean }
   | { type: 'contact'; info: ContactInfo }
   | { type: 'jump'; player: number; height: number; charge: number }
-  | { type: 'block'; player: number }
+  | { type: 'block'; player: number; /** ワンタッチ（ブロック側のコートへ上がる）か。false は跳ね返し */ touch: boolean }
   | { type: 'net' }
   | { type: 'serveToss'; player: number }
   | { type: 'point'; team: TeamId; reason: 'in' | 'out' | 'antenna' | 'serveMiss' | 'fault' }

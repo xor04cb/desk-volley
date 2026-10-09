@@ -61,7 +61,12 @@ export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEven
   for (const e of events) {
     // 打球に合わせてボールを回す（見た目だけ）
     if (e.type === 'contact') r.spinBall(e.info.kind, s.ball.vel, e.info.charge);
-    else if (e.type === 'block') r.spinBall('block', s.ball.vel);
+    else if (e.type === 'block') {
+      r.spinBall('block', s.ball.vel);
+      // ブロックに当たったことを、ボールの位置に出す（ワンタッチ＝ブロック側のボール、跳ね返し＝打った側のボール）
+      const sp = r.project(s.ball.pos.x, s.ball.pos.y + 0.6, s.ball.pos.z);
+      hud.popText(e.touch ? 'ワンタッチ' : 'ブロック！', e.touch ? 'touch' : 'stuff', sp.x, sp.y);
+    }
     else if (e.type === 'net') r.spinBall('net', s.ball.vel);
     if (e.type === 'judge') {
       const p = s.players[e.player];

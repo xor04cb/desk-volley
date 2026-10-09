@@ -135,6 +135,14 @@ export class Hud {
     setTimeout(() => p.remove(), 900);
   }
 
+  /** 判定以外の短い表示（「ワンタッチ」など）。cls で色を変える */
+  popText(text: string, cls: string, x: number, y: number): void {
+    const p = el('div', `judge ${cls}`, this.root, text);
+    p.style.left = `${x}px`;
+    p.style.top = `${y}px`;
+    setTimeout(() => p.remove(), 900);
+  }
+
   showBanner(html: string, ms: number): void {
     this.banner.innerHTML = html;
     this.banner.classList.add('show');
