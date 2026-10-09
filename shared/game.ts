@@ -9,6 +9,7 @@ import {
   DT,
   HISTORY_TICKS,
   LANDING_GRACE_TICKS,
+  OFFBALL,
   PLAYER_SPEED,
   POINT_PAUSE,
   STANDING_REACH,
@@ -57,7 +58,7 @@ import {
 import { makeRng, rand } from './prng.ts';
 import type { ActionKind, ContactKind, GameState, Player, PracticeKind, Rules, Team, TeamId, TossZone } from './types.ts';
 import { DEFAULT_RULES } from './types.ts';
-import { clamp, dist3, v3 } from './vec.ts';
+import { clamp, dist2, dist3, v3 } from './vec.ts';
 
 const NAMES: [string[], string[]] = [
   ['アオイ', 'ハル', 'ソラ', 'リク', 'ユウ', 'カイ'],
@@ -99,6 +100,8 @@ export function createGame(opts: GameOptions = {}): GameState {
         diveTick: -1,
         diveX: 0,
         diveZ: 0,
+        gx: 0,
+        gz: 0,
         fx: 0,
         fz: team === 0 ? -1 : 1,
       });
@@ -184,8 +187,8 @@ export function startServe(s: GameState): void {
   }
   for (const p of s.players) {
     const spot = p.id === s.server ? serveSpot(p.team) : formationSpot(s, p);
-    p.x = spot.x;
-    p.z = spot.z;
+    p.x = p.gx = spot.x;
+    p.z = p.gz = spot.z;
     p.y = 0;
     p.vy = 0;
     p.vx = 0;
@@ -413,18 +416,23 @@ function movePlayers(s: GameState): void {
       p.x = nx;
       p.z = nz;
     } else {
-      const target =
-        practiceMoveTarget(s, p) ?? (isActor && !team.human && aiTargets[p.team] ? aiTargets[p.team]! : isActor && !team.human ? null : formationSpot(s, p));
+      const target = practiceMoveTarget(s, p) ?? (isActor && !team.human ? aiTargets[p.team] : null);
       if (target) moveToward(p, target, PLAYER_SPEED * AI.speedFactor, DT);
-      else {
+      else if (isActor) {
         p.vx = 0;
         p.vz = 0;
-      }
+      } else moveOffBall(s, p);
+    }
+    if (isActor) {
+      // ボールに向かう選手は陣形の目標を持たない（操作から外れたら、少し様子を見てから陣形へ戻る）
+      p.gx = p.x;
+      p.gz = p.z;
     }
     clampToSide(p, false);
-    // 向き：動いていれば進行方向、止まっていればボールの方
+    // 向き：走っていれば進行方向、止まっている・陣形の近くで動いているときはボールの方
     const sp = Math.hypot(p.vx, p.vz);
-    if (sp > 0.3) {
+    const shuffling = !isActor && dist2(p.x, p.z, p.gx, p.gz) < OFFBALL.faceRunDist;
+    if (sp > 0.3 && !shuffling) {
       p.fx = p.vx / sp;
       p.fz = p.vz / sp;
     } else {
@@ -437,6 +445,50 @@ function movePlayers(s: GameState): void {
       }
     }
   }
+}
+
+/**
+ * 操作していない選手を陣形の位置へ動かす。
+ * 打球の直後（自チームのスパイク・フェイントならボールがネットを越えるまで）は前の目標へ向かい続け、
+ * 次にボールが落ちるまでに間に合う速さで、加速・減速しながら動く
+ */
+function moveOffBall(s: GameState, p: Player): void {
+  const c = s.lastContact;
+  const ownAttack = s.lastTouchTeam === p.team && (s.lastContactKind === 'spike' || s.lastContactKind === 'feint');
+  const watching =
+    s.phase === 'rally' && c !== null && (s.tick - c.tick < OFFBALL.reaction * TICK_RATE || (ownAttack && sideOf(s.ball.pos.z) === p.team));
+  if (!watching) {
+    const t = formationSpot(s, p);
+    p.gx = t.x;
+    p.gz = t.z;
+  }
+  const dx = p.gx - p.x;
+  const dz = p.gz - p.z;
+  const d = Math.hypot(dx, dz);
+  const full = PLAYER_SPEED * AI.speedFactor;
+  let want = 0;
+  if (d > OFFBALL.stopDist) {
+    // 次にボールが落ちるまでの時間で着ける速さ（急がなくてよいときはゆっくり）。近づいたら止まれる速さまで落とす
+    const left = s.predLandTick >= 0 ? (s.predLandTick - s.tick) / TICK_RATE - OFFBALL.margin : Infinity;
+    const pace = left > 0 ? d / left : full;
+    want = Math.min(clamp(pace, full * OFFBALL.minPace, full), Math.sqrt(2 * OFFBALL.accel * d));
+  }
+  const wx = d > 1e-6 ? (dx / d) * want : 0;
+  const wz = d > 1e-6 ? (dz / d) * want : 0;
+  // 速度を目標の速度へ、加速度の上限つきで近づける
+  const ax = wx - p.vx;
+  const az = wz - p.vz;
+  const a = Math.hypot(ax, az);
+  const maxDv = OFFBALL.accel * DT;
+  const k = a > maxDv ? maxDv / a : 1;
+  p.vx += ax * k;
+  p.vz += az * k;
+  if (Math.hypot(p.vx, p.vz) < 0.05 && want === 0) {
+    p.vx = 0;
+    p.vz = 0;
+  }
+  p.x += p.vx * DT;
+  p.z += p.vz * DT;
 }
 
 function resolveLanding(s: GameState): void {

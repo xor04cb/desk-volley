@@ -157,6 +157,8 @@ const POSE_EASE = 14; // 姿勢を切り替える速さ（1秒あたり。大き
 
 const SWING_TIME = 0.15; // 秒。振り下ろし・飛び込みの速さ
 
+const TURN_RATE = 12; // 向きを変える速さ（1秒あたり。大きいほど速く向く）
+
 /** 前の姿勢から素早くつなぐ姿勢（つなぎ元） */
 const BLEND_FROM: Partial<Record<Pose, Pose>> = { spikeSwing: 'spikeReady', dive: 'idle' };
 
@@ -214,6 +216,8 @@ class PlayerMesh {
   /** 今表示している姿勢（目標の姿勢へなめらかに近づける） */
   cur: PoseValues = { ...POSES.idle };
   lastTime = performance.now() / 1000;
+  /** 向きを一度でも決めたか（最初はなめらかにせずそのまま向ける） */
+  faced = false;
   constructor(team: 0 | 1) {
     const s = VIEW.playerScale;
     const H = PLAYER_HEIGHT * s;
@@ -481,11 +485,19 @@ export class Renderer {
       }
       m.group.position.set(pv.x, 0, pv.z);
       m.body.position.y = pv.y;
-      m.body.rotation.y = Math.atan2(pv.fx, pv.fz);
       const shadow = m.group.getObjectByName('shadow')!;
       const sc = Math.max(0.5, 1 - pv.y * 0.4);
       shadow.scale.set(sc, sc, sc);
       const now = performance.now() / 1000;
+      // 向きは一瞬で変えず、なめらかに回す（初回はそのまま）
+      const yaw = Math.atan2(pv.fx, pv.fz);
+      if (!m.faced) {
+        m.body.rotation.y = yaw;
+        m.faced = true;
+      } else {
+        const turn = Math.atan2(Math.sin(yaw - m.body.rotation.y), Math.cos(yaw - m.body.rotation.y));
+        m.body.rotation.y += turn * (1 - Math.exp(-TURN_RATE * Math.min(now - m.lastTime, 0.1)));
+      }
       if (pv.pose !== m.pose) {
         m.pose = pv.pose;
         m.poseStart = now;

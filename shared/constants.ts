@@ -144,6 +144,17 @@ export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
 export const SIDE_ATTACK_MIN_X = 2.0; // 打った選手がコート中央からこれ以上離れていればサイドからの攻撃(m)
 export const STRAIGHT_FEINT_MAX_DX = 1.5; // 落下地点が打った選手の正面からこの範囲ならまっすぐ(m)
 
+// ---- 操作していない選手の位置取りの動き ----
+// 打球ごとに陣形の目標が変わっても、全員が全力で走り直さないようにする 【要調整】
+export const OFFBALL = {
+  reaction: 0.3, // 打球を見てから動き出すまで（秒）。この間は前の目標へ向かい続ける
+  accel: 14, // 加速・減速（m/s²）。急に走り出したり向きを変えたりしない
+  minPace: 0.45, // 間に合うなら、全力のこの割合までゆっくり動く
+  margin: 0.4, // 次にボールが落ちるこの秒数前までに着くように動く
+  stopDist: 0.15, // 目標がこれより近ければ止まる（小さなずれで足踏みしない）
+  faceRunDist: 2.5, // 目標がこれより遠いときは走る向きを向く。近いときはボールを見たまま動く
+};
+
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）

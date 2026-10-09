@@ -65,6 +65,9 @@ export interface Player {
   /** 飛び込む先（体の位置） */
   diveX: number;
   diveZ: number;
+  /** 陣形で向かっている位置（打球の直後は少しの間、前の位置へ向かい続ける） */
+  gx: number;
+  gz: number;
   /** 向き（チームから見た前方向に対するx成分・z成分。描画用） */
   fx: number;
   fz: number;

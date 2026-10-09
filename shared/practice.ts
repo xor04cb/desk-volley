@@ -99,6 +99,10 @@ export function setupRep(s: GameState): void {
     launch(s.ball, from, solveByApex(from, st.x, st.z, PRACTICE.passApex));
     rallyFrom(s, 0, 'receive', 2, passer.id);
   }
+  for (const p of s.players) {
+    p.gx = p.x;
+    p.gz = p.z;
+  }
   computePath(s);
   updateActors(s);
   practiceActors(s);
