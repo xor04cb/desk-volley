@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import { aimPoint, applyContact, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
   RECEIVE_RECOVER_TICKS,
   SERVE_RECEIVE_APEX_BONUS,
   SET_TARGET,
   SPIKE_REACH,
+  SPIKE_SCATTER_MIN,
   STANDING_REACH,
   TICK_RATE,
   TOSS_HIT_HEIGHT,
@@ -589,6 +590,81 @@ describe('レシーブの担当', () => {
   it('アタックラインより奥に落ちるフェイントは後衛が取る', () => {
     const { s, back } = setup(4.5, true);
     expect(s.teams[0].controlled).toBe(back.id);
+  });
+  /** 相手のスパイク（または kind の打球）が自コートの (3, 2.5) へ来る。前衛右を frontLz、後衛右を (3, 6) に置く */
+  const spikeTo = (frontLz: number, kind: 'spike' | 'free' = 'spike') => {
+    const s = createGame({ seed: 5 });
+    const front = playerAtPosition(s, 0, 2);
+    const back = playerAtPosition(s, 0, 1);
+    front.x = 3;
+    front.z = frontLz;
+    back.x = 3;
+    back.z = 6;
+    const from = v3(3, 3.2, -0.5);
+    launch(s.ball, from, solveByApex(from, 3, 2.5, 3.3));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = kind;
+    s.lastContact = { team: 1, player: playerAtPosition(s, 1, 4).id, kind } as ContactInfo;
+    s.teams[0].contactsLeft = 3;
+    computePath(s);
+    updateActors(s);
+    return { s, front, back };
+  };
+  it('速いスパイクは、後ろへ下がらないと取れない前衛には取らせず後衛が取る', () => {
+    const { s, back } = spikeTo(1.0);
+    expect(s.teams[0].controlled).toBe(back.id);
+  });
+  it('速いスパイクでも、前衛が打点より後ろにいて体の前で取れるなら前衛が取る', () => {
+    const { s, front } = spikeTo(3.2);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('山なりの返球（遅い球）は、下がって取れるので今までどおり一番早く着ける選手が取る', () => {
+    const { s, front } = spikeTo(1.0, 'free');
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+});
+
+describe('スパイク・サーブのコース', () => {
+  it('スパイクは空中でスティックを倒した向きを狙い、その印の位置へ打つ', () => {
+    const s = createGame({ seed: 5 });
+    const p = playerAtPosition(s, 0, 4);
+    p.x = -3;
+    p.z = 0.8;
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.teams[0].controlled = p.id;
+    startJump(s, p, 'attack', 1);
+    setStick(s, 0, 1, 1); // 右・奥
+    const deepRight = aimPoint(s, 0)!;
+    setStick(s, 0, -1, -1); // 左・手前
+    const shortLeft = aimPoint(s, 0)!;
+    // 相手コートはチーム0から見て z<0。奥ほど z が小さい
+    expect(deepRight.x).toBeGreaterThan(2);
+    expect(shortLeft.x).toBeLessThan(-2);
+    expect(deepRight.z).toBeLessThan(shortLeft.z - 3);
+    expect(deepRight.z).toBeLessThan(0);
+    // 打てば（PERFECT・ぶれ最小）印の近くに落ちる
+    setStick(s, 0, 1, 1);
+    s.ball.pos = v3(p.x, 3.4, p.z - 0.3);
+    const { mx, mf } = s.teams[0];
+    applyContact(s, { tick: s.tick, team: 0, player: p.id, kind: 'spike', judgment: 'PERFECT', charge: 1, mx, mf, dt: 0 }, s.tick);
+    expect(Math.hypot(s.predLandX - deepRight.x, s.predLandZ - deepRight.z)).toBeLessThan(SPIKE_SCATTER_MIN + 0.3);
+    p.swung = true; // 離したとき（release）に振った扱いになる
+    expect(aimPoint(s, 0)).toBeNull(); // 振った後は消える
+  });
+  it('サーブはトスを上げてから打つまで印が出て、スティックの左右で動く', () => {
+    const s = createGame({ seed: 5 });
+    expect(aimPoint(s, 0)).toBeNull(); // トスの前は出ない（スティックはサーバーの移動）
+    press(s, 0);
+    setStick(s, 0, -1, 0);
+    const left = aimPoint(s, 0)!;
+    setStick(s, 0, 1, 0);
+    const right = aimPoint(s, 0)!;
+    expect(left.x).toBeLessThan(-2);
+    expect(right.x).toBeGreaterThan(2);
+    expect(right.z).toBeLessThan(0);
   });
 });
 

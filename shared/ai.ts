@@ -7,8 +7,6 @@ import {
   JUMP_HEIGHT_MIN,
   PLAYER_MIN_NET_DIST,
   RECEIVE_HIT_HEIGHT,
-  SPIKE_AIM_LX,
-  SPIKE_TARGET_LZ,
   STANDING_REACH,
   TICK_RATE,
   TOSS_HIT_HEIGHT,
@@ -28,6 +26,7 @@ import {
   riseTime,
   serveHitTick,
   serveToss,
+  spikeAim,
   startDive,
   startJump,
 } from './actions.ts';
@@ -308,7 +307,8 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
     for (let k = 0; k < AI.aimSamples; k++) {
       const cx = randRange(s.rng, -1.15, 1.15);
       const cf = randRange(s.rng, -0.8, 0.8);
-      const t = toWorld(T, cx * SPIKE_AIM_LX, -clamp(SPIKE_TARGET_LZ - cf * 2.5, 2, 8.5));
+      const a = spikeAim(T, p, cx, cf);
+      const t = toWorld(T, a.lx, a.lz);
       let gap = Infinity;
       for (const q of s.players) if (q.team !== T) gap = Math.min(gap, dist2(q.x, q.z, t.x, t.z));
       if (gap > bestGap) {

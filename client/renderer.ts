@@ -45,6 +45,7 @@ const COLORS = {
   skin: 0xf2c49b,
   marker: 0x3ddc6a,
   tossAim: 0xffd23a,
+  shotAim: 0x4dfcff,
   chargeArcs: [0x3a8bff, 0xff4040, 0xffd23a],
   timing: 0xffffff,
 };
@@ -276,6 +277,7 @@ export class Renderer {
   private players = new Map<number, PlayerMesh>();
   private marker: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number };
   private tossAim: THREE.Mesh;
+  private shotAim: THREE.Group;
   /** 視点。0=チーム0の後ろから、1=チーム1の後ろから */
   view: 0 | 1 = 0;
 
@@ -334,6 +336,17 @@ export class Renderer {
     this.tossAim.rotation.x = -Math.PI / 2;
     this.tossAim.visible = false;
     this.scene.add(this.tossAim);
+
+    // スパイク・サーブの狙いの印（輪＋十字）
+    this.shotAim = new THREE.Group();
+    const aimMat = new THREE.MeshBasicMaterial({ color: COLORS.shotAim, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.82, 32), aimMat);
+    const barH = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.16), aimMat);
+    const barV = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 2.0), aimMat);
+    for (const m of [ring, barH, barV]) this.shotAim.add(m);
+    this.shotAim.rotation.x = -Math.PI / 2;
+    this.shotAim.visible = false;
+    this.scene.add(this.shotAim);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -548,6 +561,13 @@ export class Renderer {
         this.arrow.rotation.set(-Math.PI / 2, 0, Math.atan2(-dx, -dz));
       }
     } else this.arrow.visible = false;
+  }
+
+  /** スパイク・サーブの狙いの印（相手コート上の十字）。null で消す */
+  setShotAim(pos: { x: number; z: number } | null): void {
+    this.shotAim.visible = !!pos;
+    if (!pos) return;
+    this.shotAim.position.set(pos.x, 0.026, pos.z);
   }
 
   /** トスを上げる相手の印。null で消す */

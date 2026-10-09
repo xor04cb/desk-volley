@@ -100,6 +100,7 @@ export const FEINT_TAP_SEC = 0.09; // スパイクの2回目をこれより短�
 export const SPIKE_CHARGE_FLOOR = FEINT_TAP_SEC / SPIKE_CHARGE_MAX; // 溜め量にしたフェイントの境目
 export const SPIKE_TARGET_LZ = 6.0; // 狙いの深さ（相手ネットからの距離）
 export const SPIKE_AIM_LX = 3.0; // スティック横倒しでの左右の狙い
+export const SPIKE_AIM_DEPTH = 2.5; // スティックを上（奥）に倒すと深く、下に倒すと浅くなる量(m)
 
 // ---- フェイント ----
 export const FEINT_MAX_DIST = 3; // ネット際から3m以内
@@ -147,6 +148,9 @@ export const DIVE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 // ---- レシーブの担当 ----
 /** 相手からのボールがネットからこの距離より奥に落ちるときは、後衛がレシーブする 【要調整】 */
 export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
+
+// 相手のスパイク（速い球）は、打点より前（ネット側）にいて後ろへ下がらないと取れない選手には取らせない 【要調整】
+export const RECEIVE_BACKSTEP_MAX = 0.5; // 打点がこれ以上後ろにある選手は候補から外す(m)
 
 // サイドからのまっすぐなフェイントは、その側の後衛が取る 【要調整】
 export const SIDE_ATTACK_MIN_X = 2.0; // 打った選手がコート中央からこれ以上離れていればサイドからの攻撃(m)
