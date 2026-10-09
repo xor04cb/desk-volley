@@ -343,7 +343,7 @@ function aiServe(s: GameState, T: TeamId): void {
     judgment: j === 'MISS' ? 'BAD' : j,
     charge: randRange(s.rng, 0.2, 0.8),
     mx: randRange(s.rng, -1, 1),
-    mf: 0,
+    mf: randRange(s.rng, -0.6, 1), // 深さもばらつかせる（浅いサーブは遅くなる）
     dt,
   };
 }

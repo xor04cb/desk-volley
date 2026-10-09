@@ -142,6 +142,7 @@ export interface HistoryEntry {
   vel: Vec3;
   mode: Ball['mode'];
   grounded: boolean;
+  drop: number;
   /** 各選手の (x, z, y) */
   players: number[];
 }

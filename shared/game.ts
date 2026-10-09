@@ -550,6 +550,7 @@ function recordHistory(s: GameState): void {
     vel: { ...s.ball.vel },
     mode: s.ball.mode,
     grounded: s.ball.grounded,
+    drop: s.ball.drop,
     players,
   });
   if (s.history.length > HISTORY_TICKS) s.history.shift();

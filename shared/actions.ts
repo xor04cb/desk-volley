@@ -45,18 +45,20 @@ import {
   RECEIVE_RECOVER_TICKS,
   RECEIVE_SCATTER_MAX,
   RECEIVE_SCATTER_MIN,
+  SERVE_AIM_DEPTH,
   SERVE_AIM_LX,
   SERVE_RECEIVE_APEX_BONUS,
-  SERVE_APEX_FAST,
-  SERVE_APEX_SLOW,
   SERVE_HIT_HEIGHT,
+  SERVE_NET_CLEAR,
   SERVE_SCATTER_MAX,
   SERVE_SCATTER_MIN,
+  SERVE_SPEED_MAX,
+  SERVE_SPEED_MIN,
   SETTER_PREFER_SEC,
-  SIDE_ATTACK_MIN_X,
-  STRAIGHT_FEINT_MAX_DX,
-  SERVE_TARGET_LZ_FAST,
-  SERVE_TARGET_LZ_SLOW,
+  SERVE_TARGET_LZ,
+  SERVE_TARGET_LZ_MAX,
+  SERVE_TARGET_LZ_MIN,
+  SERVE_TOPSPIN,
   SERVE_TOSS_HEIGHT,
   SET_TARGET,
   SPIKE_AIM_DEPTH,
@@ -82,7 +84,7 @@ import {
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
 } from './constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, setterOf, switchedPos, toLocal, toWorld } from './court.ts';
+import { FORMATION, isFrontRow, judgeOf, positionOf, setterOf, switchedPos, toLocal, toWorld } from './court.ts';
 import { launch, predict, sideOf, solveByApex, solveBySpeed, stepBall, type BallEvent } from './physics.ts';
 import { rand, randInCircle, randRange } from './prng.ts';
 import type { ActionKind, ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
@@ -307,6 +309,7 @@ function rewindContact(s: GameState, pc: PendingContact): void {
   s.ball.vel = copy3(h.vel);
   s.ball.mode = 'flying';
   s.ball.grounded = h.grounded;
+  s.ball.drop = h.drop;
   if (s.landTick > pc.tick) s.landTick = -1;
   if (!applyContact(s, pc, pc.tick)) {
     // 打てなかった場合は元に戻す（予測からやり直す）
@@ -355,9 +358,25 @@ export function spikeAim(T: TeamId, p: Player, mx: number, mf: number): { lx: nu
   return { lx, lz: -clamp(SPIKE_TARGET_LZ + mf * SPIKE_AIM_DEPTH, 2, 8.5) };
 }
 
-/** サーブの狙い（チームから見た座標）。左右はスティック、深さは溜め（溜めるほど低く速い球で深く） */
-export function serveAim(mx: number, ce: number): { lx: number; lz: number } {
-  return { lx: clamp(mx * SERVE_AIM_LX, -3.5, 3.5), lz: -lerp(SERVE_TARGET_LZ_SLOW, SERVE_TARGET_LZ_FAST, ce) };
+/** サーブの狙い（チームから見た座標）。スティックの左右で左右、上（奥）に倒すと深く、下（手前）に倒すと浅く */
+export function serveAim(mx: number, mf: number): { lx: number; lz: number } {
+  return {
+    lx: clamp(mx * SERVE_AIM_LX, -3.5, 3.5),
+    lz: -clamp(SERVE_TARGET_LZ + mf * SERVE_AIM_DEPTH, SERVE_TARGET_LZ_MIN, SERVE_TARGET_LZ_MAX),
+  };
+}
+
+/**
+ * サーブの初速。水平の速さ hSpeed でまっすぐ目標へ。ネットの上を SERVE_NET_CLEAR 空けて越えられないときは、越えられるまで遅くする
+ * （速いサーブほど低く飛ぶので、浅い所は速く打てない）
+ */
+function serveVelocity(from: Vec3, tx: number, tz: number, hSpeed: number, g: number): Vec3 {
+  for (let hs = hSpeed; ; hs -= 0.25) {
+    const v = solveBySpeed(from, tx, tz, hs, BALL_RADIUS, g);
+    const t = -from.z / v.z; // ネット（z=0）を通る時刻
+    const y = from.y + v.y * t - 0.5 * g * t * t;
+    if (y >= NET_HEIGHT + SERVE_NET_CLEAR || hs <= SERVE_SPEED_MIN * 0.5) return v;
+  }
 }
 
 /**
@@ -372,8 +391,7 @@ export function aimPoint(s: GameState, T: TeamId): { x: number; z: number } | nu
     return toWorld(T, a.lx, a.lz);
   }
   if (s.phase === 'serve' && s.serveTossed && s.servingTeam === T && p.id === s.server && !s.pending) {
-    const c = team.pressTick >= 0 ? chargeOf(team.pressTick, s.tick, 'serve') : 0;
-    const a = serveAim(team.mx, c);
+    const a = serveAim(team.mx, team.mf);
     return toWorld(T, a.lx, a.lz);
   }
   return null;
@@ -400,6 +418,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
   let apex = 0;
   let speed = 0;
   let scatter = 0;
+  let drop = 0;
   let vel: Vec3;
 
   if (kind === 'spike' && s.rules.feint && pc.charge < SPIKE_CHARGE_FLOOR) kind = 'feint';
@@ -468,15 +487,18 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
       break;
     }
     case 'serve': {
-      // 溜めるほど低く速い球で深くを狙う（深くしないと低い球はネットに掛かる）
-      const a = serveAim(pc.mx, ce);
+      // コースはスティック、速さは溜め（浅い所はネットを越えられる速さまでしか出ない）
+      const a = serveAim(pc.mx, pc.mf);
       const t = toWorld(T, a.lx, a.lz);
       scatter = lerp(SERVE_SCATTER_MIN, SERVE_SCATTER_MAX, pc.charge) * eff.scatter * 1.33;
       const off = randInCircle(s.rng, scatter);
       tx = t.x + off.x;
       tz = t.z + off.z;
-      apex = lerp(SERVE_APEX_SLOW, SERVE_APEX_FAST, ce);
-      vel = solveByApex(from, tx, tz, apex);
+      // 速いサーブほどトップスピンで強く落ちる（速くてもコートに収まる）
+      drop = SERVE_TOPSPIN * ce;
+      const g = G * (1 + drop);
+      vel = serveVelocity(from, tx, tz, lerp(SERVE_SPEED_MIN, SERVE_SPEED_MAX, ce), g);
+      apex = vel.y > 0 ? from.y + (vel.y * vel.y) / (2 * g) : from.y;
       break;
     }
     default:
@@ -484,6 +506,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
   }
 
   launch(s.ball, from, vel);
+  s.ball.drop = drop;
   if (kind === 'receive') p.recoverTick = ballTick + RECEIVE_RECOVER_TICKS; // カットの後は少し動けない
   if (kind === 'serve') {
     s.phase = 'rally';
@@ -679,6 +702,7 @@ function applyBlock(s: GameState, p: Player, touch: boolean): void {
     v.x = v.x * 0.5 + randRange(s.rng, -1.5, 1.5);
   }
   // ボールをネットの手前側（攻撃側）へ戻しておくと、すぐ下でネット判定に引っかからない
+  s.ball.drop = 0;
   s.blockedThisAttack = true;
   s.lastTouchTeam = T;
   s.lastContactKind = 'block';
@@ -715,18 +739,6 @@ export function travelTime(p: Player, x: number, z: number): number {
   return air + dist2(p.x, p.z, x, z) / PLAYER_SPEED;
 }
 
-/**
- * 相手のサイド（レフト・ライト）からのまっすぐなフェイントなら、その側の後衛（右なら1番、左なら5番）。それ以外は null
- * landX は落下地点（ワールド座標）
- */
-export function straightSideFeint(s: GameState, T: TeamId, landX: number): Player | null {
-  const c = s.lastContact;
-  if (s.lastContactKind !== 'feint' || !c || c.team === T || s.teams[T].contactsLeft !== 3) return null;
-  const atk = s.players[c.player];
-  if (Math.abs(atk.x) < SIDE_ATTACK_MIN_X || Math.abs(landX - atk.x) > STRAIGHT_FEINT_MAX_DX) return null;
-  return playerAtPosition(s, T, toLocal(T, landX, 0).lx > 0 ? 1 : 5);
-}
-
 /** 地点に（空中かどうかに関わらず）距離が最も近い選手 */
 export function nearestTo(s: GameState, team: TeamId, x: number, z: number, exclude: number): Player {
   let best: Player | null = null;
@@ -743,7 +755,8 @@ export function nearestTo(s: GameState, team: TeamId, x: number, z: number, excl
 }
 
 /**
- * 地点に最も早く着ける選手。skipBlockers ならブロックに跳んでいる選手を除く（全員跳んでいれば除かない）。
+ * 地点に最も早く着ける選手。row で前衛・後衛に絞る。
+ * skipBlockers ならブロックに跳んでいる選手を除く（前衛に絞っていて前衛が全員跳んでいれば後衛から、全員跳んでいれば除かない）。
  * noBackstep なら、地点より RECEIVE_BACKSTEP_MAX 以上前（ネット側）にいる選手を除く（後ろに下がりながらでは速い球を取れないため）。
  * 除いた結果だれもいなければ、noBackstep は無いものとして選ぶ
  */
@@ -753,17 +766,22 @@ export function fastestTo(
   x: number,
   z: number,
   exclude: number,
-  row: 'all' | 'back' = 'all',
+  row: 'all' | 'back' | 'front' = 'all',
   skipBlockers = false,
   noBackstep = false,
 ): Player {
-  if (skipBlockers && s.players.every((p) => p.team !== team || p.id === exclude || p.jump === 'block')) skipBlockers = false;
+  const inRow = (p: Player) => row === 'all' || isFrontRow(positionOf(s, p)) === (row === 'front');
+  if (skipBlockers && s.players.every((p) => p.team !== team || p.id === exclude || !inRow(p) || p.jump === 'block')) {
+    // 前衛から選ぶのに前衛が全員ブロックに跳んでいる → 後衛も含めて跳んでいない選手から。全員跳んでいれば除かない
+    if (row === 'front') return fastestTo(s, team, x, z, exclude, 'all', skipBlockers, noBackstep);
+    skipBlockers = false;
+  }
   const lz = toLocal(team, x, z).lz;
   let best: Player | null = null;
   let bt = Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.id === exclude) continue;
-    if (row === 'back' && isFrontRow(positionOf(s, p))) continue;
+    if (!inRow(p)) continue;
     if (skipBlockers && p.jump === 'block') continue;
     if (noBackstep && lz - toLocal(team, p.x, p.z).lz > RECEIVE_BACKSTEP_MAX) continue;
     const t = travelTime(p, x, z);
@@ -814,23 +832,23 @@ export function updateActors(s: GameState): void {
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
         // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛。
-        // 相手のフェイントが前に落ちるときは、ブロックに跳んでいる選手を除いて一番早く着ける選手（前衛でも後衛でも）。
+        // 相手のフェイントが前に落ちるときは、ブロックに跳んでいない前衛のうち一番早く着ける選手（前衛が全員跳んでいれば後衛）。
         // 自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）。
         // 相手のスパイク（速い球）は、後ろへ下がらないと取れない選手（打点よりネット側にいる選手）には取らせない
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
-        let row: 'all' | 'back' = 'all';
+        let row: 'all' | 'back' | 'front' = 'all';
         let nearest = false;
         let skipBlockers = false;
         const noBackstep = s.lastTouchTeam !== T && s.lastContactKind === 'spike';
         if (ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
           if (!front) row = 'back';
-          else if (s.lastContactKind === 'feint') skipBlockers = true;
-          else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
+          else if (s.lastContactKind === 'feint') {
+            row = 'front';
+            skipBlockers = true;
+          } else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        const side = ip ? straightSideFeint(s, T, ip.x) : null;
-        if (side) team.controlled = side.id;
-        else if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers, noBackstep)).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers, noBackstep)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

@@ -111,14 +111,19 @@ export const SERVE_TIME_LIMIT = 10; // 秒（仮）【要確認】
 export const SERVE_BEHIND_END = 1.0; // エンドラインからの距離
 export const SERVE_TOSS_HEIGHT = 1.6; // サーブトスで手元からどれだけ上がるか
 export const SERVE_HIT_HEIGHT = 2.7;
-export const SERVE_APEX_SLOW = 4.4; // 溜め0の最高点（遅い山なり）【要調整】
-export const SERVE_APEX_FAST = 3.2; // 溜め最大の最高点（速い・低い）【要調整】
+// 溜めるほど速い（水平の速さ m/s）。ただしネットを越えられない速さにはならない（浅い所を狙うと遅くなる）【要調整】
+export const SERVE_SPEED_MIN = 11;
+export const SERVE_SPEED_MAX = 20;
+export const SERVE_NET_CLEAR = 0.3; // ネットの上をこれだけ空けて越える（ボールの中心の高さの余裕, m）
+export const SERVE_TOPSPIN = 0.7; // 溜め最大のサーブのトップスピン。重力をこの割合だけ強くして、速くてもコートに落とす 【要調整】
 export const SERVE_SCATTER_MIN = 0.6;
 export const SERVE_SCATTER_MAX = 2.6; // 溜めが大きいほどぶれも大きい（アウトのリスク）
-// 狙う深さ（相手ネットから）。速い球は深く狙わないとネットに掛かる 【要調整】
-export const SERVE_TARGET_LZ_SLOW = 5.5;
-export const SERVE_TARGET_LZ_FAST = 7.5;
+// 狙い：左右と深さ（相手ネットから）。スティックの上（奥）で深く、下で浅く 【要調整】
 export const SERVE_AIM_LX = 2.5;
+export const SERVE_TARGET_LZ = 6.5; // スティックを倒していないときの深さ
+export const SERVE_AIM_DEPTH = 3;
+export const SERVE_TARGET_LZ_MIN = 3;
+export const SERVE_TARGET_LZ_MAX = 8; // エンドライン(9m)の手前。溜めるとぶれでアウトになることもある
 
 // ---- ブロック ----
 export const BLOCK_HAND_BOTTOM = 2.1; // 足元からの高さ（手の下端）
@@ -151,10 +156,6 @@ export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
 
 // 相手のスパイク（速い球）は、打点より前（ネット側）にいて後ろへ下がらないと取れない選手には取らせない 【要調整】
 export const RECEIVE_BACKSTEP_MAX = 0.5; // 打点がこれ以上後ろにある選手は候補から外す(m)
-
-// サイドからのまっすぐなフェイントは、その側の後衛が取る 【要調整】
-export const SIDE_ATTACK_MIN_X = 2.0; // 打った選手がコート中央からこれ以上離れていればサイドからの攻撃(m)
-export const STRAIGHT_FEINT_MAX_DX = 1.5; // 落下地点が打った選手の正面からこの範囲ならまっすぐ(m)
 
 // ---- 操作していない選手の位置取りの動き ----
 // 打球ごとに陣形の目標が変わっても、全員が全力で走り直さないようにする 【要調整】

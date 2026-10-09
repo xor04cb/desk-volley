@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimPoint, applyContact, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import { aimPoint, applyContact, serveHitTick, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
   RECEIVE_RECOVER_TICKS,
@@ -538,17 +538,31 @@ describe('レシーブの担当', () => {
     const { s, front } = setup(2, true);
     expect(s.teams[0].controlled).toBe(front.id);
   });
-  it('前に落ちるフェイントは、後衛の方が近ければ後衛が取る', () => {
-    const { s, back } = nearNet(false, [1.8, 1.5], [0.5, 2.3]);
+  it('前に落ちるフェイントは、後衛の方が近くても前衛が取る', () => {
+    const { s, front } = nearNet(false, [1.8, 1.5], [0.5, 2.3]);
     s.lastContactKind = 'feint';
     updateActors(s);
-    expect(s.teams[0].controlled).toBe(back.id);
+    expect(s.teams[0].controlled).toBe(front.id);
   });
-  it('前に落ちるフェイントは、ブロックに跳んでいる選手は一番近くても取りに行かない', () => {
-    const { s, front, back } = nearNet(false, [0.3, 1.5], [0, 3.5]);
+  it('前に落ちるフェイントは、ブロックに跳んでいる前衛は一番近くても取りに行かず、跳んでいない前衛が取る', () => {
+    const { s, front } = nearNet(false, [0.3, 1.5], [0, 3.5]);
     front.jump = 'block';
     front.y = 0.05; // もうすぐ着地（着地を待っても一番早い）
     front.vy = 0;
+    s.lastContactKind = 'feint';
+    updateActors(s);
+    const c = s.players[s.teams[0].controlled];
+    expect(c.id).not.toBe(front.id);
+    expect(isFrontRow(positionOf(s, c))).toBe(true);
+  });
+  it('前に落ちるフェイントは、前衛が全員ブロックに跳んでいれば後衛が取る', () => {
+    const { s, back } = nearNet(false, [0.3, 1.5], [0, 3.5]);
+    for (const pos of [2, 3, 4]) {
+      const p = playerAtPosition(s, 0, pos);
+      p.jump = 'block';
+      p.y = 0.05;
+      p.vy = 0;
+    }
     s.lastContactKind = 'feint';
     updateActors(s);
     expect(s.teams[0].controlled).toBe(back.id);
@@ -576,10 +590,10 @@ describe('レシーブの担当', () => {
     updateActors(s);
     return s;
   };
-  it('サイドからのまっすぐなフェイントは、その側の後衛が取る（前衛が近くても）', () => {
-    const ctrlPos = (s: GameState) => positionOf(s, s.players[s.teams[0].controlled]);
-    expect(ctrlPos(feintFrom(-3, -3))).toBe(5); // 自コートの左
-    expect(ctrlPos(feintFrom(3, 3.2))).toBe(1); // 自コートの右
+  it('サイドからのまっすぐなフェイントも、アタックラインより前なら前衛が取る', () => {
+    const ctrlFront = (s: GameState) => isFrontRow(positionOf(s, s.players[s.teams[0].controlled]));
+    expect(ctrlFront(feintFrom(-3, -3))).toBe(true); // 自コートの左
+    expect(ctrlFront(feintFrom(3, 3.2))).toBe(true); // 自コートの右
   });
   it('サイドからでもクロスのフェイント、中央からのフェイントは今までどおり', () => {
     const cross = feintFrom(-3, 1);
@@ -665,6 +679,41 @@ describe('スパイク・サーブのコース', () => {
     expect(left.x).toBeLessThan(-2);
     expect(right.x).toBeGreaterThan(2);
     expect(right.z).toBeLessThan(0);
+    setStick(s, 0, 0, 1);
+    const deep = aimPoint(s, 0)!;
+    setStick(s, 0, 0, -1);
+    const short = aimPoint(s, 0)!;
+    expect(deep.z).toBeLessThan(short.z - 4); // 上で奥、下で手前
+  });
+  /** サーブを打って、ネットを越えたか・水平の速さ・落ちた地点を返す */
+  const serveWith = (charge: number, mf: number) => {
+    const s = createGame({ seed: 5 });
+    press(s, 0);
+    while (s.tick < serveHitTick(s)) step(s);
+    applyContact(s, { tick: s.tick, team: 0, player: s.server, kind: 'serve', judgment: 'PERFECT', charge, mx: 0, mf, dt: 0 }, s.tick);
+    const hSpeed = Math.hypot(s.ball.vel.x, s.ball.vel.z);
+    const landZ = s.predLandZ;
+    let net = false;
+    for (let i = 0; i < 200 && s.phase !== 'point'; i++) {
+      step(s);
+      if (s.events.some((e) => e.type === 'net')) net = true;
+    }
+    return { hSpeed, landZ, net };
+  };
+  it('サーブは溜めるほど速い。深く狙った速いサーブもネットを越える', () => {
+    const slow = serveWith(0, 0.5);
+    const fast = serveWith(1, 0.5);
+    expect(fast.hSpeed).toBeGreaterThan(slow.hSpeed + 5);
+    expect(fast.hSpeed).toBeGreaterThan(17);
+    expect(fast.net).toBe(false);
+    expect(fast.landZ).toBeLessThan(-6);
+  });
+  it('浅く狙うと、溜めてもネットを越えられる速さまでしか出ない', () => {
+    const short = serveWith(1, -1);
+    const deep = serveWith(1, 1);
+    expect(short.net).toBe(false);
+    expect(short.landZ).toBeGreaterThan(-5.5);
+    expect(short.hSpeed).toBeLessThan(deep.hSpeed);
   });
 });
 

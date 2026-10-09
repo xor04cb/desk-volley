@@ -18,6 +18,8 @@ export interface Ball {
   mode: 'held' | 'flying' | 'rest';
   /** 最初の接地を済ませたか */
   grounded: boolean;
+  /** トップスピン（順回転）で落ちる強さ。重力に (1 + drop) を掛ける。打ち直す・ネットや床に当たると 0 */
+  drop: number;
 }
 
 export type BallEvent =
@@ -26,12 +28,15 @@ export type BallEvent =
   | { type: 'land'; x: number; z: number };
 
 export function makeBall(): Ball {
-  return { pos: v3(0, 1, 0), vel: v3(), mode: 'held', grounded: false };
+  return { pos: v3(0, 1, 0), vel: v3(), mode: 'held', grounded: false, drop: 0 };
 }
 
 export function cloneBall(b: Ball): Ball {
-  return { pos: copy3(b.pos), vel: copy3(b.vel), mode: b.mode, grounded: b.grounded };
+  return { pos: copy3(b.pos), vel: copy3(b.vel), mode: b.mode, grounded: b.grounded, drop: b.drop };
 }
+
+/** ボールにかかる下向きの加速度（トップスピンの分を含む） */
+export const gravityOf = (b: Ball): number => G * (1 + b.drop);
 
 /** z の符号からコートの側（0=手前 z>0、1=奥 z<0） */
 export const sideOf = (z: number): 0 | 1 => (z >= 0 ? 0 : 1);
@@ -43,10 +48,11 @@ export const sideOf = (z: number): 0 | 1 => (z >= 0 ? 0 : 1);
 export function stepBall(b: Ball, out?: BallEvent[]): void {
   if (b.mode !== 'flying') return;
   const p0 = b.pos;
+  const g = gravityOf(b);
   const nx = p0.x + b.vel.x * DT;
-  const ny = p0.y + b.vel.y * DT - 0.5 * G * DT * DT;
+  const ny = p0.y + b.vel.y * DT - 0.5 * g * DT * DT;
   const nz = p0.z + b.vel.z * DT;
-  b.vel.y -= G * DT;
+  b.vel.y -= g * DT;
 
   // ネット（z=0 の面）をまたいだか
   if ((p0.z > 0 && nz <= 0) || (p0.z < 0 && nz >= 0)) {
@@ -60,6 +66,7 @@ export function stepBall(b: Ball, out?: BallEvent[]): void {
       b.pos = { x: nx, y: ny, z: s * BALL_RADIUS };
       b.vel.z = -b.vel.z * NET_RESTITUTION;
       b.vel.x *= 0.6;
+      b.drop = 0;
       out?.push({ type: 'net' });
       floorCheck(b, p0, out);
       return;
@@ -85,6 +92,7 @@ function floorCheck(b: Ball, prev: Vec3, out?: BallEvent[]): void {
     out?.push({ type: 'land', x: lx, z: lz });
   }
   b.pos.y = BALL_RADIUS;
+  b.drop = 0;
   if (b.vel.y < 0) b.vel.y = -b.vel.y * FLOOR_BOUNCE;
   b.vel.x *= 0.6;
   b.vel.z *= 0.6;
@@ -100,6 +108,7 @@ export function launch(b: Ball, from: Vec3, vel: Vec3): void {
   b.vel = copy3(vel);
   b.mode = 'flying';
   b.grounded = false;
+  b.drop = 0;
 }
 
 /**
@@ -115,13 +124,13 @@ export function solveByApex(from: Vec3, toX: number, toZ: number, apexY: number,
   return { x: (toX - from.x) / T, y: vy, z: (toZ - from.z) / T };
 }
 
-/** 水平速度を指定して、目標地点に届く初速を逆算する（スパイク用。下向きにもなる） */
-export function solveBySpeed(from: Vec3, toX: number, toZ: number, hSpeed: number, targetY = BALL_RADIUS): Vec3 {
+/** 水平速度を指定して、目標地点に届く初速を逆算する（スパイク用。下向きにもなる）。g はトップスピンで重くしたときの重力 */
+export function solveBySpeed(from: Vec3, toX: number, toZ: number, hSpeed: number, targetY = BALL_RADIUS, g = G): Vec3 {
   const dx = toX - from.x;
   const dz = toZ - from.z;
   const d = Math.sqrt(dx * dx + dz * dz);
   const T = Math.max(d / hSpeed, 0.05);
-  const vy = (targetY - from.y + 0.5 * G * T * T) / T;
+  const vy = (targetY - from.y + 0.5 * g * T * T) / T;
   return { x: dx / T, y: vy, z: dz / T };
 }
 
