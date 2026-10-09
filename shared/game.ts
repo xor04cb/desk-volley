@@ -208,7 +208,8 @@ export function startServe(s: GameState): void {
 function holdBall(s: GameState): void {
   const p = s.players[s.server];
   const dir = p.team === 0 ? -1 : 1;
-  s.ball.pos = v3(p.x + 0.25, 1.1, p.z + dir * 0.3);
+  // 右手で持つ（ネットを向いたときの右は、チーム0なら +x、チーム1なら -x）
+  s.ball.pos = v3(p.x - dir * 0.25, 1.1, p.z + dir * 0.3);
 }
 
 // ---------------------------------------------------------------- 入力

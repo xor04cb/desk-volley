@@ -60,6 +60,7 @@ import {
   SERVE_TARGET_LZ_MIN,
   SERVE_TOPSPIN,
   SERVE_TOSS_HEIGHT,
+  SERVE_TOSS_SIDE,
   SET_TARGET,
   SPIKE_AIM_DEPTH,
   SPIKE_AIM_LX,
@@ -599,7 +600,8 @@ export function attackZone(s: GameState, p: Player): 'left' | 'center' | 'right'
 export function serveToss(s: GameState): void {
   const p = s.players[s.server];
   const dir = p.team === 0 ? -1 : 1;
-  const from = v3(p.x, 1.3, p.z + dir * 0.25);
+  // 右肩の前へ上げる（右手で打つ）
+  const from = v3(p.x - dir * SERVE_TOSS_SIDE, 1.3, p.z + dir * 0.25);
   const apex = SERVE_HIT_HEIGHT + SERVE_TOSS_HEIGHT * 0.4;
   launch(s.ball, from, v3(0, Math.sqrt(2 * G * (apex - from.y)), dir * 0.35));
   s.serveTossed = true;
@@ -831,7 +833,7 @@ export function updateActors(s: GameState): void {
         }
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
-        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛。
+        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛（サーブカットは除く）。
         // 相手のフェイントが前に落ちるときは、ブロックに跳んでいない前衛のうち一番早く着ける選手（前衛が全員跳んでいれば後衛）。
         // 自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）。
         // 相手のスパイク（速い球）は、後ろへ下がらないと取れない選手（打点よりネット側にいる選手）には取らせない
@@ -839,8 +841,12 @@ export function updateActors(s: GameState): void {
         let row: 'all' | 'back' | 'front' = 'all';
         let nearest = false;
         let skipBlockers = false;
-        const noBackstep = s.lastTouchTeam !== T && s.lastContactKind === 'spike';
-        if (ip && team.contactsLeft === 3) {
+        // サーブカットは前衛・後衛を問わず受ける人の中から（セッターは受けない）。後ろへ下がらないと取れない人には取らせない
+        const serve = s.lastTouchTeam !== T && s.lastContactKind === 'serve';
+        const noBackstep = s.lastTouchTeam !== T && (s.lastContactKind === 'spike' || serve);
+        let exclude = doubleBan;
+        if (serve) exclude = setterOf(s, T)?.id ?? -1;
+        else if (ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
           if (!front) row = 'back';
           else if (s.lastContactKind === 'feint') {
@@ -848,7 +854,7 @@ export function updateActors(s: GameState): void {
             skipBlockers = true;
           } else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, doubleBan, row, skipBlockers, noBackstep)).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, noBackstep)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

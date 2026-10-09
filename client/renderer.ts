@@ -151,8 +151,11 @@ export interface PlayerView {
   pose: Pose;
 }
 
-/** 選手の姿勢。idle=通常、low=低い構え（ディグ・ブロックフォロー）、block=ブロック、spikeReady=スパイク・サーブの振りかぶり、spikeSwing=その振り下ろし、dive=フライング */
-export type Pose = 'idle' | 'low' | 'block' | 'spikeReady' | 'spikeSwing' | 'dive';
+/**
+ * 選手の姿勢。idle=通常、low=低い構え（ディグ・ブロックフォロー）、block=ブロック、spikeReady=スパイク・サーブの振りかぶり、spikeSwing=その振り下ろし、dive=フライング、
+ * pass=カット・レシーブ（腕を前でそろえる）、set=トス（両手を額の上に構える）
+ */
+export type Pose = 'idle' | 'low' | 'block' | 'spikeReady' | 'spikeSwing' | 'dive' | 'pass' | 'set';
 
 const POSE_EASE = 14; // 姿勢を切り替える速さ（1秒あたり。大きいほど速く切り替わる）
 
@@ -190,6 +193,10 @@ const POSES: Record<Pose, PoseValues> = {
   spikeSwing: { lx: -0.1, rx: -0.5, lz: 0.2, rz: -0.9, lean: 0.3, twist: -0.25, crouch: 0 },
   // 前へ飛び込んで床に体を伸ばし、両腕をボールの方へ伸ばす
   dive: { lx: -PI * 0.9, rx: -PI * 0.9, lz: 0.08, rz: 0.08, lean: 1.4, twist: 0, crouch: 0 },
+  // 腰を落とし、両腕を前へ伸ばして体の前で合わせる（腕の面でボールを受ける）
+  pass: { lx: -1.0, rx: -1.0, lz: -0.13, rz: -0.13, lean: 0.3, twist: 0, crouch: 0.3 },
+  // 両腕を前上へ上げ、少し開いて額の上でボールを迎える。膝を軽く曲げる
+  set: { lx: -PI * 0.8, rx: -PI * 0.8, lz: 0.3, rz: 0.3, lean: -0.08, twist: 0, crouch: 0.12 },
 };
 const POSE_KEYS = Object.keys(POSES.idle) as (keyof PoseValues)[];
 
@@ -219,6 +226,8 @@ class PlayerMesh {
   lastTime = performance.now() / 1000;
   /** 向きを一度でも決めたか（最初はなめらかにせずそのまま向ける） */
   faced = false;
+  /** 体の向き（なめらかに回した値。ひねりは含まない） */
+  yaw = 0;
   constructor(team: 0 | 1) {
     const s = VIEW.playerScale;
     const H = PLAYER_HEIGHT * s;
@@ -247,8 +256,9 @@ class PlayerMesh {
     this.armL = new THREE.Mesh(armGeo, skin);
     this.armR = new THREE.Mesh(armGeo, skin);
     const shoulderY = legH + torsoH - 0.05;
-    this.armL.position.set(-0.32 * s, shoulderY, 0);
-    this.armR.position.set(0.32 * s, shoulderY, 0);
+    // 体は +z を向くので、右手は -x 側、左手は +x 側
+    this.armL.position.set(0.32 * s, shoulderY, 0);
+    this.armR.position.set(-0.32 * s, shoulderY, 0);
     this.upper.add(this.armL, this.armR);
     this.body.add(this.upper);
     this.group.add(this.body);
@@ -505,11 +515,11 @@ export class Renderer {
       // 向きは一瞬で変えず、なめらかに回す（初回はそのまま）
       const yaw = Math.atan2(pv.fx, pv.fz);
       if (!m.faced) {
-        m.body.rotation.y = yaw;
+        m.yaw = yaw;
         m.faced = true;
       } else {
-        const turn = Math.atan2(Math.sin(yaw - m.body.rotation.y), Math.cos(yaw - m.body.rotation.y));
-        m.body.rotation.y += turn * (1 - Math.exp(-TURN_RATE * Math.min(now - m.lastTime, 0.1)));
+        const turn = Math.atan2(Math.sin(yaw - m.yaw), Math.cos(yaw - m.yaw));
+        m.yaw += turn * (1 - Math.exp(-TURN_RATE * Math.min(now - m.lastTime, 0.1)));
       }
       if (pv.pose !== m.pose) {
         m.pose = pv.pose;
@@ -531,10 +541,12 @@ export class Renderer {
         for (const key of POSE_KEYS) m.cur[key] += (target[key] - m.cur[key]) * k;
       }
       const ps = m.cur;
-      m.armL.rotation.set(ps.lx, 0, -ps.lz);
-      m.armR.rotation.set(ps.rx, 0, ps.rz);
+      // 左腕は +x 側なので z の正で外へ開き、右腕は -x 側なので負で外へ開く
+      m.armL.rotation.set(ps.lx, 0, ps.lz);
+      m.armR.rotation.set(ps.rx, 0, -ps.rz);
       m.body.rotation.x = ps.lean;
-      m.body.rotation.y += ps.twist;
+      // twist の正で右肩（-x 側）を後ろへ引く
+      m.body.rotation.y = m.yaw - ps.twist;
       // しゃがむ：脚を縮め、上半身をその分下げる
       for (const leg of m.legs) {
         leg.scale.y = 1 - ps.crouch;

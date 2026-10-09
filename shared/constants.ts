@@ -111,11 +111,12 @@ export const SERVE_TIME_LIMIT = 10; // 秒（仮）【要確認】
 export const SERVE_BEHIND_END = 1.0; // エンドラインからの距離
 export const SERVE_TOSS_HEIGHT = 1.6; // サーブトスで手元からどれだけ上がるか
 export const SERVE_HIT_HEIGHT = 2.7;
+export const SERVE_TOSS_SIDE = 0.2; // サーブトスを右肩の前へ上げる横のずれ(m)
 // 溜めるほど速い（水平の速さ m/s）。ただしネットを越えられない速さにはならない（浅い所を狙うと遅くなる）【要調整】
 export const SERVE_SPEED_MIN = 11;
-export const SERVE_SPEED_MAX = 20;
+export const SERVE_SPEED_MAX = 25;
 export const SERVE_NET_CLEAR = 0.3; // ネットの上をこれだけ空けて越える（ボールの中心の高さの余裕, m）
-export const SERVE_TOPSPIN = 0.7; // 溜め最大のサーブのトップスピン。重力をこの割合だけ強くして、速くてもコートに落とす 【要調整】
+export const SERVE_TOPSPIN = 1.3; // 溜め最大のサーブのトップスピン。重力をこの割合だけ強くして、速くてもコートに落とす 【要調整】
 export const SERVE_SCATTER_MIN = 0.6;
 export const SERVE_SCATTER_MAX = 2.6; // 溜めが大きいほどぶれも大きい（アウトのリスク）
 // 狙い：左右と深さ（相手ネットから）。スティックの上（奥）で深く、下で浅く 【要調整】

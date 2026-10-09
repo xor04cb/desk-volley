@@ -91,8 +91,29 @@ export function poseOf(s: GameState, p: Player): Pose {
   if (s.phase === 'serve' && p.id === s.server && s.serveTossed) return 'spikeReady';
   const c = s.lastContact;
   if (c && c.kind === 'serve' && c.player === p.id && s.tick - c.tick < SERVE_SWING_TICKS) return 'spikeSwing';
+  const hit = contactPose(s, p);
+  if (hit) return hit;
   if (lowStance(s, p)) return 'low';
   return 'idle';
+}
+
+/** カット・トスの姿勢を見せる長さ：触る前（ボールが来る少し前から構える）と触った後 */
+const CONTACT_POSE_BEFORE = 0.35; // 秒
+const CONTACT_POSE_AFTER_TICKS = 18; // 0.3秒
+
+/** カット・レシーブ・返球なら 'pass'、トスなら 'set'。ボールを触る直前と直後だけ */
+function contactPose(s: GameState, p: Player): Pose | null {
+  const c = s.lastContact;
+  if (c && c.player === p.id && s.tick - c.tick < CONTACT_POSE_AFTER_TICKS) {
+    if (c.kind === 'receive' || c.kind === 'free') return 'pass';
+    if (c.kind === 'toss') return 'set';
+  }
+  if (s.phase !== 'rally' || s.teams[p.team].controlled !== p.id) return null;
+  const action = currentAction(s, p.team);
+  if (action !== 'receive' && action !== 'free' && action !== 'toss') return null;
+  const t = timeToContact(s, p.team);
+  if (t < 0 || t > CONTACT_POSE_BEFORE) return null;
+  return action === 'toss' ? 'set' : 'pass';
 }
 
 /**

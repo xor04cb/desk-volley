@@ -626,6 +626,32 @@ describe('レシーブの担当', () => {
     updateActors(s);
     return { s, front, back };
   };
+  /** 相手のサーブが自コートの (0, landLz) へ来る。前衛中央を (0, 4.8)、後衛中央を (1.6, 7.3) に置く（W型の受け方） */
+  const serveTo = (landLz: number) => {
+    const s = createGame({ seed: 5 });
+    const front = playerAtPosition(s, 0, 3);
+    const back = playerAtPosition(s, 0, 6);
+    [front.x, front.z] = [0, 4.8];
+    [back.x, back.z] = [1.6, 7.3];
+    const from = v3(0, 3.0, -10);
+    launch(s.ball, from, solveByApex(from, 0, landLz, 4.0));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'serve';
+    s.teams[0].contactsLeft = 3;
+    computePath(s);
+    updateActors(s);
+    return { s, front, back };
+  };
+  it('サーブカットは、アタックラインより奥でも前衛の受け手が近ければ前衛が取る', () => {
+    const { s, front } = serveTo(5.2);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('サーブカットは、前衛の受け手が後ろへ下がらないと取れない深いサーブなら後衛が取る', () => {
+    const { s, back } = serveTo(7.8);
+    expect(s.teams[0].controlled).toBe(back.id);
+  });
   it('速いスパイクは、後ろへ下がらないと取れない前衛には取らせず後衛が取る', () => {
     const { s, back } = spikeTo(1.0);
     expect(s.teams[0].controlled).toBe(back.id);
