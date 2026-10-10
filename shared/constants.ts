@@ -169,6 +169,9 @@ export const OFFBALL = {
   faceRunDist: 2.5, // 目標がこれより遠いときは走る向きを向く。近いときはボールを見たまま動く
 };
 
+/** スティックをこれより小さくしか倒していなければ「触っていない」とみなす */
+export const STICK_DEADZONE = 0.15;
+
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）

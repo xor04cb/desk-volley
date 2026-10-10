@@ -12,7 +12,8 @@ import {
   TOSS_HIT_HEIGHT,
   TOSS_TARGET_LZ,
 } from '../shared/constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, switchedPos, toWorld } from '../shared/court.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
+import { formationSpot } from '../shared/ai.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
@@ -195,6 +196,41 @@ describe('サーブの後の操作', () => {
     const z0 = s.players[server].z;
     for (let i = 0; i < 30; i++) step(s);
     expect(s.players[server].z).toBeLessThan(z0); // コートの中へ戻っている
+  });
+  /** サーブを打って、相手が触る前まで（スティックは stick のまま）進める。操作している前衛を返す */
+  const afterServe = (stick: [number, number]) => {
+    const s = createGame({ seed: 1, rules: { serveTime: 30 } });
+    s.aiReadyTick = [1e9, 1e9]; // 相手に拾わせない
+    press(s, 0);
+    for (let i = 0; i < 10; i++) step(s);
+    release(s, 0);
+    while (!s.lastContact) step(s);
+    step(s);
+    const c = s.players[s.teams[0].controlled];
+    setStick(s, 0, stick[0], stick[1]);
+    const x0 = c.x;
+    for (let i = 0; i < 50 && s.phase === 'rally'; i++) step(s);
+    return { s, c, x0 };
+  };
+  /** ボールが床に落ちるまで進める（陣形へは、ボールが落ちるより少し前に着くように動く） */
+  const untilLand = (s: GameState) => {
+    while (s.landTick < 0 && s.phase === 'rally') step(s);
+  };
+  it('サーブの後に操作する前衛は、スティックを倒していなければ他の選手と同じく得意な位置へ動く', () => {
+    const { s, c, x0 } = afterServe([0, 0]);
+    untilLand(s);
+    const gap = (q: typeof c) => {
+      const t = formationSpot(s, q);
+      return Math.hypot(q.x - t.x, q.z - t.z);
+    };
+    // 操作していない選手と同じ動き方（間に合う速さで加速・減速）なので、他の選手と同じくらい位置に着いている
+    const others = s.players.filter((q) => q.team === 0 && q.id !== c.id && q.id !== s.server);
+    expect(gap(c)).toBeLessThan(Math.max(...others.map(gap)) + 0.2);
+    expect(Math.abs(c.x - x0)).toBeGreaterThan(1); // 元の位置（ローテーションの位置）から動いている
+  });
+  it('スティックを倒せば、自分で動かせる', () => {
+    const { c, x0 } = afterServe([-1, 0]);
+    expect(c.x).toBeLessThan(x0 - 2);
   });
 });
 
@@ -486,7 +522,7 @@ describe('レシーブの担当', () => {
   const setup = (lz: number, feint = false) => {
     const s = createGame({ seed: 5 });
     const front = playerAtPosition(s, 0, 2);
-    const back = playerAtPosition(s, 0, 1); // 後衛右
+    const back = playerAtPosition(s, 0, 5); // 後衛（1番はセッターで1本目を取らないので、5番を右に置く）
     front.x = 3;
     front.z = lz;
     back.x = 3;
@@ -609,7 +645,7 @@ describe('レシーブの担当', () => {
   const spikeTo = (frontLz: number, kind: 'spike' | 'free' = 'spike') => {
     const s = createGame({ seed: 5 });
     const front = playerAtPosition(s, 0, 2);
-    const back = playerAtPosition(s, 0, 1);
+    const back = playerAtPosition(s, 0, 5); // 1番はセッターなので、5番を右に置く
     front.x = 3;
     front.z = frontLz;
     back.x = 3;
@@ -651,6 +687,17 @@ describe('レシーブの担当', () => {
   it('サーブカットは、前衛の受け手が後ろへ下がらないと取れない深いサーブなら後衛が取る', () => {
     const { s, back } = serveTo(7.8);
     expect(s.teams[0].controlled).toBe(back.id);
+  });
+  it('1本目はセッターに取らせない（一番近くても）', () => {
+    const { s, front } = spikeTo(1.0);
+    const setter = setterOf(s, 0)!;
+    [setter.x, setter.z] = [3, 3.0]; // 打点のすぐ後ろ
+    updateActors(s);
+    expect(s.teams[0].controlled).not.toBe(setter.id);
+    s.lastContactKind = 'free'; // 山なりの返球でも同じ
+    updateActors(s);
+    expect(s.teams[0].controlled).not.toBe(setter.id);
+    expect(s.teams[0].controlled).toBe(front.id);
   });
   it('速いスパイクは、後ろへ下がらないと取れない前衛には取らせず後衛が取る', () => {
     const { s, back } = spikeTo(1.0);

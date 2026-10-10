@@ -841,12 +841,12 @@ export function updateActors(s: GameState): void {
         let row: 'all' | 'back' | 'front' = 'all';
         let nearest = false;
         let skipBlockers = false;
-        // サーブカットは前衛・後衛を問わず受ける人の中から（セッターは受けない）。後ろへ下がらないと取れない人には取らせない
+        // 1本目はセッターに取らせない（2本目を上げるため）。
+        // サーブカットは前衛・後衛を問わず受ける人の中から。後ろへ下がらないと取れない人には取らせない
         const serve = s.lastTouchTeam !== T && s.lastContactKind === 'serve';
         const noBackstep = s.lastTouchTeam !== T && (s.lastContactKind === 'spike' || serve);
-        let exclude = doubleBan;
-        if (serve) exclude = setterOf(s, T)?.id ?? -1;
-        else if (ip && team.contactsLeft === 3) {
+        const exclude = team.contactsLeft === 3 ? (setterOf(s, T)?.id ?? -1) : doubleBan;
+        if (!serve && ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
           if (!front) row = 'back';
           else if (s.lastContactKind === 'feint') {
@@ -854,7 +854,7 @@ export function updateActors(s: GameState): void {
             skipBlockers = true;
           } else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, doubleBan) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, noBackstep)).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, exclude) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, noBackstep)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

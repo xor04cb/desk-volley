@@ -11,6 +11,7 @@ import {
   LANDING_GRACE_TICKS,
   OFFBALL,
   PLAYER_SPEED,
+  STICK_DEADZONE,
   POINT_PAUSE,
   STANDING_REACH,
   TICK_RATE,
@@ -408,6 +409,9 @@ function movePlayers(s: GameState): void {
     if (aimingToss) {
       p.vx = 0;
       p.vz = 0;
+    } else if (isActor && team.human && autoPositioning(s, p.team)) {
+      // サーブの後などボールが相手側にある間は、スティックを倒していなければ他の選手と同じく陣形の位置へ動く
+      moveOffBall(s, p);
     } else if (isActor && team.human) {
       const w = toWorld(p.team, team.mx, -team.mf);
       const nx = p.x + w.x * PLAYER_SPEED * DT;
@@ -446,6 +450,17 @@ function movePlayers(s: GameState): void {
       }
     }
   }
+}
+
+/**
+ * 人が操作している選手を、自動で陣形の位置へ動かすか。
+ * ボールが相手側にあり（自チームが触る番でない）、相手がまだ攻撃に入っていない間で、スティックもボタンも触っていないとき。
+ * 相手がトスを上げた後のブロックの位置取りは人に任せる
+ */
+function autoPositioning(s: GameState, T: TeamId): boolean {
+  const t = s.teams[T];
+  if (s.phase !== 'rally' || t.pressTick >= 0 || Math.hypot(t.mx, t.mf) > STICK_DEADZONE) return false;
+  return !ballComingTo(s, T) && !opponentAttacking(s, T);
 }
 
 /**
