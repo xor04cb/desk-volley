@@ -82,6 +82,8 @@ export const SET_TARGET = { lx: 0.6, lz: 1.2 }; // セッターへの返球目�
 export const TWO_ATTACK_MAX_DIST = 1.2; // m 【要調整】
 // 2本目はセッターが上げる。ほかの選手よりこの秒数以上遅れるときだけ、ほかの選手が上げる 【要調整】
 export const SETTER_PREFER_SEC = 0.5;
+// 1本目はセッターに取らせない。ただしセッターがほかの選手よりこの秒数以上早く着ける（目の前に来た）ボールはセッターが取る 【要調整】
+export const SETTER_FIRST_BALL_MARGIN = 0.4;
 // トスの向き（レフト・センター・ライト）は、打点からこの距離以内にいるときだけスティックの左右で選ぶ 【要調整】
 export const TOSS_AIM_MAX_DIST = 1.2; // m
 export const TOSS_APEX_MIN = 3.6; // 【要調整】
@@ -91,7 +93,6 @@ export const TOSS_SCATTER_MIN = 0.15;
 export const TOSS_TARGET_LZ = 0.9; // アタッカー用トスの落下目標（ネットからの距離）
 // 低いパスでオーバーに間に合わないときは、落ちる前に入れればアンダーでトスする。アンダーはぶれやすい 【要調整】
 export const TOSS_UNDERHAND_SCATTER_MUL = 1.6;
-export const TOSS_UNDERHAND_SWITCH_DIST = 0.6; // オーバーの打点でボールが手からこれ以上離れていて、アンダーの方が近ければアンダー(m)
 export const TOSS_TARGET_LX = { left: -3.3, center: 0, right: 3.3 };
 
 // ---- スパイク ----
@@ -104,6 +105,11 @@ export const SPIKE_CHARGE_FLOOR = FEINT_TAP_SEC / SPIKE_CHARGE_MAX; // 溜め量
 export const SPIKE_TARGET_LZ = 6.0; // 狙いの深さ（相手ネットからの距離）
 export const SPIKE_AIM_LX = 3.0; // スティック横倒しでの左右の狙い
 export const SPIKE_AIM_DEPTH = 2.5; // スティックを上（奥）に倒すと深く、下に倒すと浅くなる量(m)
+
+// ---- ダイレクト（相手の長いカット・トスを、自コートのネット際で前衛が直接叩く） 【要調整】
+export const DIRECT_MAX_LZ = 1.5; // ネットからこの距離までに、打てる高さへ下りてくるボール（ネット際の返球だけ）
+export const DIRECT_HAND_HEIGHT = STANDING_REACH + (JUMP_HEIGHT_MIN + JUMP_HEIGHT_MAX) / 2; // 跳んだ手の高さ
+export const DIRECT_MIN_HEIGHT = NET_HEIGHT + 0.25; // これより低いボールは叩けない（ネットに掛かる）
 
 // ---- フェイント ----
 export const FEINT_MAX_DIST = 3; // ネット際から3m以内

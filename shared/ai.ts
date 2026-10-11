@@ -9,6 +9,7 @@ import {
   RECEIVE_HIT_HEIGHT,
   STANDING_REACH,
   TICK_RATE,
+  TOSS_HIT_HEIGHT,
 } from './constants.ts';
 import {
   applyContact,
@@ -16,6 +17,7 @@ import {
   ballSpeed,
   ballComingTo,
   blockerFor,
+  directChance,
   chooseAttacker,
   contactDist,
   interceptPoint,
@@ -225,14 +227,16 @@ export function runAI(s: GameState, T: TeamId): Target | null {
 
   if (ballComingTo(s, T) && team.contactsLeft > 0) {
     const cl = team.contactsLeft;
-    if (cl >= 2) {
+    // 相手の長いカット・トスがネット際へ高く来たら、前衛はダイレクトで叩く（下のスパイクと同じ動き）
+    const direct = cl === 3 && (p.jump === 'attack' || (isFrontRow(positionOf(s, p)) && directChance(s, T) !== null));
+    if (cl >= 2 && !direct) {
       const kind: ContactKind = cl === 3 ? 'receive' : 'toss';
       // トスはオーバーの打点に間に合わなければ、アンダーの打点へ
       const ip = kind === 'receive' ? interceptPoint(s, T, RECEIVE_HIT_HEIGHT) : tossPoint(s, T, p);
       tryHit(s, p, kind);
       return ip ? { x: ip.x, z: ip.z } : null;
     }
-    // 残り1回：スパイク。ボールが低ければ山なりで返す
+    // 残り1回（またはダイレクト）：スパイク。ボールが低ければ山なりで返す
     const handH = STANDING_REACH + AI_JUMP_H;
     if (p.jump === 'attack') {
       if (!p.swung) tryHit(s, p, 'spike');
@@ -241,6 +245,7 @@ export function runAI(s: GameState, T: TeamId): Target | null {
     const ip = interceptPoint(s, T, handH);
     const near = ip && toLocal(T, ip.x, ip.z).lz < 4.5;
     if (!ip || !near) {
+      if (direct) return null;
       tryHit(s, p, 'free');
       const low = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
       return low ? { x: low.x, z: low.z } : null;
@@ -288,6 +293,8 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
   if (!b0 || !b1) return;
   // 今が打点に最も近づく瞬間か。トスはオーバーで届かなければアンダー（腰の高さ）でも見る
   const closest = (under: boolean) => {
+    // オーバーは胸より上（オーバーとアンダーの打点の中間より上）のボールだけ（人の判定と同じ）
+    if (kind === 'toss' && !under && b0.y < (TOSS_HIT_HEIGHT + RECEIVE_HIT_HEIGHT) / 2) return -1;
     const a = contactDist(s, p, kind, s.tick, b0, under);
     return a <= maxReachOf(kind, ballSpeed(s)) && contactDist(s, p, kind, s.tick + 1, b1, under) >= a ? a : -1;
   };
@@ -332,7 +339,8 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
     if (s.rules.feint && rand(s.rng) < AI.feintRate) charge = 0.05;
   }
   const action: ActionKind = kind === 'spike' || kind === 'feint' ? 'spike' : kind === 'free' ? 'free' : kind === 'toss' ? 'toss' : 'receive';
-  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge, dive, underhand });
+  const direct = kind === 'spike' && s.teams[T].contactsLeft === 3;
+  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge, dive, underhand, direct });
   if (kind === 'spike') p.swung = true;
   if (judgment === 'MISS') {
     s.aiMissTick[T] = s.tick;

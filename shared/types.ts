@@ -129,7 +129,7 @@ export interface ContactInfo {
 }
 
 export type GameEvent =
-  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean; underhand?: boolean }
+  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean; underhand?: boolean; direct?: boolean }
   | { type: 'contact'; info: ContactInfo }
   | { type: 'jump'; player: number; height: number; charge: number }
   | { type: 'block'; player: number; /** ワンタッチ（ブロック側のコートへ上がる）か。false は跳ね返し */ touch: boolean }

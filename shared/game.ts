@@ -27,6 +27,7 @@ import {
   checkBlocks,
   computePath,
   contactDist,
+  directChance,
   hitPoint,
   interceptPoint,
   judgeRelease,
@@ -257,7 +258,8 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
       // フライングはスティックの向き（倒していなければ走っていた向き）へ飛ぶ。手が落下予測円に入らなければ上がらない
       const aim = r.dive && r.judgment !== 'MISS' ? aimDive(s, p, diveDirection(p, t.mx, t.mf)) : null;
       if (aim && !aim.ok) r.judgment = 'MISS';
-      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive, underhand: r.underhand });
+      const direct = kind === 'spike' && t.contactsLeft === 3; // 相手の長いカット・トスを1本目で叩いた
+      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive, underhand: r.underhand, direct });
       if (kind === 'spike') p.swung = true;
       if (aim) startDive(s, p, r.tStar, aim);
       if (r.judgment === 'MISS') return;
@@ -290,7 +292,10 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
   if (ballComingTo(s, team)) {
     if (t.contactsLeft <= 0) return 'none';
     if (t.lastToucher === p.id && s.lastTouchTeam === team && s.lastContactKind !== 'block') return 'none';
-    if (t.contactsLeft === 3) return 'receive';
+    if (t.contactsLeft === 3) {
+      // 相手の長いカット・トスがネット際へ高く来たら、前衛はダイレクトで叩ける（跳んで、空中でもう一度押して打つ）
+      return directChance(s, team) && isFrontRow(positionOf(s, p)) ? 'jump' : 'receive';
+    }
     if (t.contactsLeft === 2) {
       const front = isFrontRow(positionOf(s, p)) && toLocal(team, p.x, p.z).lz < 3.5;
       if (!front || t.mf <= 0.5) return 'toss';

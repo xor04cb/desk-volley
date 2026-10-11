@@ -18,6 +18,9 @@ import {
   BLOCK_TOUCH_TOP,
   CHARGE_MAX,
   COURT_HALF_WIDTH,
+  DIRECT_HAND_HEIGHT,
+  DIRECT_MAX_LZ,
+  DIRECT_MIN_HEIGHT,
   DIVE_FRAME_RADIUS,
   DIVE_HAND_OFFSET,
   DIVE_REACH,
@@ -27,6 +30,7 @@ import {
   FEINT_MAX_DIST,
   FRONT_RECEIVE_DEPTH,
   G,
+  HISTORY_TICKS,
   JUDGE_EFFECT,
   JUDGE_WINDOW_TICKS,
   JUMP_HEIGHT_MAX,
@@ -55,6 +59,7 @@ import {
   SERVE_SCATTER_MIN,
   SERVE_SPEED_MAX,
   SERVE_SPEED_MIN,
+  SETTER_FIRST_BALL_MARGIN,
   SETTER_PREFER_SEC,
   SERVE_TARGET_LZ,
   SERVE_TARGET_LZ_MAX,
@@ -83,7 +88,6 @@ import {
   TOSS_REACH,
   TOSS_SCATTER_MAX,
   TOSS_UNDERHAND_SCATTER_MUL,
-  TOSS_UNDERHAND_SWITCH_DIST,
   TOSS_SCATTER_MIN,
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
@@ -213,16 +217,28 @@ export function maxReachOf(kind: ContactKind, ballSpeed = 0): number {
 /**
  * ボタンを離した tick と、ボールが打点に最も近づく tick の差で評価する。
  * 判定窓（±250ms）の中で最も近い時刻を探し、届く距離になければ MISS。
- * トスはオーバー（額の上）で上げる。オーバーでは届かない、またはボールが手から TOSS_UNDERHAND_SWITCH_DIST 以上離れていて
- * アンダー（腰の高さ）の方が近いときだけアンダーで上げる（低いパスに、落ちる前に入れたとき）
+ * トスはオーバー（額の上）で上げる。オーバーの打点にボールが来たときに手が届く所にいれば、離すのが遅くてもオーバー（タイミングで判定）。
+ * オーバーの打点に間に合っていなかったときだけ、アンダー（腰の高さ）で上げる（低いパスに、落ちる前に入れたとき）
  */
-export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number): JudgeResult & { dist?: number } {
+export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number): JudgeResult {
   const r = judgeAt(s, p, kind, releaseTick, false);
-  if (kind !== 'toss') return r;
+  if (kind !== 'toss' || couldOverhand(s, p, releaseTick)) return r;
   const u = judgeAt(s, p, kind, releaseTick, true);
-  if (u.tStar < 0) return r;
-  if (r.tStar < 0 || (r.dist > TOSS_UNDERHAND_SWITCH_DIST && u.dist < r.dist)) return { ...u, underhand: true };
-  return r;
+  return u.tStar >= 0 ? { ...u, underhand: true } : r;
+}
+
+/**
+ * ボールがオーバーで触れる高さ（オーバーとアンダーの打点の中間より上）にある間に、手が届く所にいたか
+ * （記録の残っている範囲と判定窓の先まで）
+ */
+function couldOverhand(s: GameState, p: Player, releaseTick: number): boolean {
+  const minY = (TOSS_HIT_HEIGHT + RECEIVE_HIT_HEIGHT) / 2;
+  for (let t = releaseTick - HISTORY_TICKS + 1; t <= releaseTick + JUDGE_WINDOW_TICKS + 1; t++) {
+    if (s.landTick >= 0 && t >= s.landTick) break;
+    const b = ballAt(s, t);
+    if (b && b.y >= minY && contactDist(s, p, 'toss', t, b, false) <= reachOf('toss')) return true;
+  }
+  return false;
 }
 
 function judgeAt(s: GameState, p: Player, kind: ContactKind, releaseTick: number, underhand: boolean): JudgeResult & { dist: number } {
@@ -767,6 +783,26 @@ export function interceptPoint(s: GameState, team: TeamId, height: number): { x:
   return null;
 }
 
+/**
+ * 相手のカットやトスが長く、ネットを越えて自コートのネット際へ高く来るボール（ダイレクトで叩けるボール）なら、
+ * 跳んだ手の高さまで下りてくる地点と tick。それ以外は null。
+ * サーブ・スパイク・フェイント・ブロックのボールは叩かない（サーブはルールで打てない）
+ */
+export function directChance(s: GameState, T: TeamId): { x: number; z: number; tick: number } | null {
+  const k = s.lastContactKind;
+  if (s.phase !== 'rally' || s.lastTouchTeam !== 1 - T || s.teams[T].contactsLeft !== 3) return null;
+  if (k !== 'receive' && k !== 'toss' && k !== 'free') return null;
+  for (let i = 1; i < s.path.length; i++) {
+    const q = s.path[i];
+    if (sideOf(q.z) !== T) continue;
+    if (toLocal(T, q.x, q.z).lz > DIRECT_MAX_LZ) return null; // 打てる高さまで下りる前に奥へ行ってしまう
+    if (q.y < s.path[i - 1].y && q.y <= DIRECT_HAND_HEIGHT) {
+      return q.y >= DIRECT_MIN_HEIGHT ? { x: q.x, z: q.z, tick: s.pathTick + i + 1 } : null;
+    }
+  }
+  return null;
+}
+
 /** 選手が地点に着くまでの秒数（空中なら着地までの時間を足す） */
 export function travelTime(p: Player, x: number, z: number): number {
   let air = 0;
@@ -899,7 +935,20 @@ export function updateActors(s: GameState): void {
             skipBlockers = true;
           } else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, exclude) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, fastBall)).id;
+        // ・相手のカット・トスが長くネット際へ高く来る（ダイレクトで叩ける）ときは、その打点に一番早く着ける前衛（セッターでもよい）
+        const direct = directChance(s, T);
+        if (direct) team.controlled = fastestTo(s, T, direct.x, direct.z, -1, 'front').id;
+        else if (ip) {
+          const pick = (ex: number) => (nearest ? nearestTo(s, T, ip.x, ip.z, ex) : fastestTo(s, T, ip.x, ip.z, ex, row, skipBlockers, fastBall));
+          let chosen = pick(exclude);
+          // ・ただしセッターの目の前に来たボール（セッターがほかの選手より SETTER_FIRST_BALL_MARGIN 秒以上早く着ける）はセッターが取る
+          const setter = setterOf(s, T);
+          if (setter && exclude === setter.id && pick(-1).id === setter.id) {
+            const time = (q: Player) => (fastBall ? receiveTime(q, ip.x, ip.z) : travelTime(q, ip.x, ip.z));
+            if (time(setter) + SETTER_FIRST_BALL_MARGIN <= time(chosen)) chosen = setter;
+          }
+          team.controlled = chosen.id;
+        }
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック

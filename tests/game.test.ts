@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimPoint, applyContact, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import { aimPoint, applyContact, ballComingTo, directChance, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
   RECEIVE_HIT_HEIGHT,
@@ -717,16 +717,22 @@ describe('レシーブの担当', () => {
     const { s, back } = serveTo(7.8);
     expect(s.teams[0].controlled).toBe(back.id);
   });
-  it('1本目はセッターに取らせない（一番近くても）', () => {
-    const { s, front } = spikeTo(1.0);
+  it('1本目はセッターに取らせない（一番近くても、少し早いだけなら）', () => {
+    const { s, front, back } = spikeTo(1.0);
+    const setter = setterOf(s, 0)!;
+    [setter.x, setter.z] = [3, 5.0]; // 後衛よりは近いが、目の前ではない
+    updateActors(s);
+    expect(s.teams[0].controlled).toBe(back.id);
+    s.lastContactKind = 'free'; // 山なりの返球でも同じ
+    updateActors(s);
+    expect(s.teams[0].controlled).toBe(front.id);
+  });
+  it('セッターの目の前に来たボールは、1本目でもセッターが取る', () => {
+    const { s } = spikeTo(1.0);
     const setter = setterOf(s, 0)!;
     [setter.x, setter.z] = [3, 3.0]; // 打点のすぐ後ろ
     updateActors(s);
-    expect(s.teams[0].controlled).not.toBe(setter.id);
-    s.lastContactKind = 'free'; // 山なりの返球でも同じ
-    updateActors(s);
-    expect(s.teams[0].controlled).not.toBe(setter.id);
-    expect(s.teams[0].controlled).toBe(front.id);
+    expect(s.teams[0].controlled).toBe(setter.id);
   });
   it('速いスパイクは、後ろへ下がらないと取れない前衛には取らせず後衛が取る', () => {
     const { s, back } = spikeTo(1.0);
@@ -778,7 +784,10 @@ describe('アンダーのトス', () => {
   it('アンダーの打点で離すと、アンダーでトスが上がる', () => {
     const { s, setter } = lowPass();
     const tp = tossPoint(s, 0, setter)!;
-    [setter.x, setter.z] = [tp.x, tp.z]; // 走り込んだところ
+    // ボールが胸の高さ（オーバーで触れる高さ）より下りるまでセッターは遠くにいて、その後アンダーの打点へ走り込んだ
+    const chest = interceptPoint(s, 0, (TOSS_HIT_HEIGHT + RECEIVE_HIT_HEIGHT) / 2)!;
+    while (s.tick < chest.tick + 1) step(s);
+    [setter.x, setter.z] = [tp.x, tp.z];
     let best = Infinity;
     let hitTick = -1;
     for (let i = 0; i < s.path.length; i++) {
@@ -799,6 +808,67 @@ describe('アンダーのトス', () => {
     const { s, setter } = lowPass();
     [setter.x, setter.z] = [0.6, 2.5];
     expect(tossPoint(s, 0, setter)?.underhand).toBe(false);
+  });
+  it('オーバーに間に合っていれば、離すのが遅れてもアンダーにはならない（遅れとして判定される）', () => {
+    const { s, setter } = lowPass();
+    const over = interceptPoint(s, 0, TOSS_HIT_HEIGHT)!;
+    [setter.x, setter.z] = [over.x, over.z]; // オーバーの打点に入っている
+    press(s, 0);
+    while (s.tick < over.tick + 12) step(s); // 200ms 遅れて離す（アンダーの打点の方が近い時刻）
+    release(s, 0);
+    const judge = s.events.find((e) => e.type === 'judge');
+    expect(judge && judge.type === 'judge' && judge.underhand).toBeFalsy();
+    step(s);
+    expect(s.lastContact?.underhand ?? false).toBe(false);
+  });
+});
+
+describe('ダイレクト', () => {
+  /** 相手（チーム1）のカットが長く、ネットを越えて自コートの (0.5, landLz) へ落ちる（最高点 apex） */
+  const overpass = (landLz: number, apex: number, humans: [boolean, boolean] = [true, false], fromZ = -3) => {
+    const s = createGame({ seed: 5, humans });
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.aiReadyTick = [s.tick, 1e9];
+    const passer = playerAtPosition(s, 1, 6);
+    const from = v3(0, RECEIVE_HIT_HEIGHT, fromZ);
+    launch(s.ball, from, solveByApex(from, 0.5, landLz, apex));
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'receive';
+    s.teams[1].contactsLeft = 2;
+    s.teams[1].lastToucher = passer.id;
+    s.teams[0].contactsLeft = 3;
+    computePath(s);
+    updateActors(s);
+    return s;
+  };
+  it('長いカットがネット際へ高く来たら、前衛に切り替わり、ジャンプして叩ける', () => {
+    const s = overpass(1.0, 4.2);
+    expect(directChance(s, 0)).not.toBeNull();
+    const c = s.players[s.teams[0].controlled];
+    expect(isFrontRow(positionOf(s, c))).toBe(true);
+    expect(currentAction(s, 0)).toBe('jump');
+  });
+  it('深く来るカットや低いボールは、今までどおりレシーブ', () => {
+    expect(directChance(overpass(5, 4.5), 0)).toBeNull(); // ネット際で打てる高さを通らない
+    const low = overpass(1.0, 2.8, [true, false], -1.5); // ネットをすれすれで越える低いボール（自コートで2.6m）
+    expect(ballComingTo(low, 0)).toBe(true);
+    expect(directChance(low, 0)).toBeNull();
+    expect(currentAction(low, 0)).toBe('receive');
+  });
+  it('サーブはダイレクトで打てない', () => {
+    const s = overpass(1.0, 4.2);
+    s.lastContactKind = 'serve';
+    expect(directChance(s, 0)).toBeNull();
+  });
+  it('CPUも長いカットはダイレクトで叩きに行く', () => {
+    const s = overpass(1.0, 4.2, [false, false]);
+    let direct = false;
+    for (let i = 0; i < 120 && !direct; i++) {
+      step(s);
+      direct = s.events.some((e) => e.type === 'judge' && e.team === 0 && e.direct);
+    }
+    expect(direct).toBe(true);
   });
 });
 

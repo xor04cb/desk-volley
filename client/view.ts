@@ -74,7 +74,7 @@ export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEven
       const p = s.players[e.player];
       const sp = r.project(p.x, p.y + 2.3, p.z);
       // 人の判定は大きく、CPUの判定は表示しない（調整用にデバッグ表示時のみ）
-      const note = e.judgment === 'MISS' ? undefined : e.dive ? 'フライング！' : e.underhand ? 'アンダー' : undefined;
+      const note = e.judgment === 'MISS' ? undefined : e.dive ? 'フライング！' : e.underhand ? 'アンダー' : e.direct ? 'ダイレクト' : undefined;
       if (e.team === o.humanTeam || hud.debugOn) hud.popJudgment(e.judgment, sp.x, sp.y, note);
     }
   }
