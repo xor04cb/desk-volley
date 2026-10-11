@@ -82,6 +82,8 @@ import {
   TOSS_HIT_HEIGHT,
   TOSS_REACH,
   TOSS_SCATTER_MAX,
+  TOSS_UNDERHAND_SCATTER_MUL,
+  TOSS_UNDERHAND_SWITCH_DIST,
   TOSS_SCATTER_MIN,
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
@@ -144,14 +146,15 @@ export function playerAt(s: GameState, p: Player, t: number): Vec3 {
   return { x: p.x + p.vx * tau * (y > 0 ? 1 : 0), y, z: p.z + p.vz * tau * (y > 0 ? 1 : 0) };
 }
 
-export function hitPoint(s: GameState, p: Player, kind: ContactKind, t: number): Vec3 {
+export function hitPoint(s: GameState, p: Player, kind: ContactKind, t: number, underhand = false): Vec3 {
   const q = playerAt(s, p, t);
   switch (kind) {
     case 'receive':
     case 'free':
       return v3(q.x, RECEIVE_HIT_HEIGHT, q.z);
     case 'toss':
-      return v3(q.x, TOSS_HIT_HEIGHT, q.z);
+      // アンダーのトスはレシーブと同じ腰の高さで上げる
+      return v3(q.x, underhand ? RECEIVE_HIT_HEIGHT : TOSS_HIT_HEIGHT, q.z);
     case 'serve':
       return v3(q.x, SERVE_HIT_HEIGHT, q.z);
     default:
@@ -175,8 +178,8 @@ export function reachOf(kind: ContactKind, ballSpeed = 0): number {
  * スパイクは落下予測円の中にいれば横のずれを無視し、下りてくるボールと手の高さの差だけで見る
  * （低いトスは、手の高さでは円の手前にあるため）。
  */
-export function contactDist(s: GameState, p: Player, kind: ContactKind, t: number, b: Vec3): number {
-  const h = hitPoint(s, p, kind, t);
+export function contactDist(s: GameState, p: Player, kind: ContactKind, t: number, b: Vec3, underhand = false): number {
+  const h = hitPoint(s, p, kind, t, underhand);
   if (kind === 'spike' && s.predLandTick >= 0 && dist2(h.x, h.z, s.predLandX, s.predLandZ) <= SPIKE_FRAME_RADIUS) {
     const prev = ballAt(s, t - 1);
     if (!prev || b.y <= prev.y) return Math.abs(b.y - h.y);
@@ -192,6 +195,8 @@ export interface JudgeResult {
   dt: number;
   /** 普通には届かず、フライングで届く */
   dive: boolean;
+  /** オーバーでは届かず、アンダーでトスする */
+  underhand?: boolean;
 }
 
 /** フライングできる動作（床に近いボールを上げる動作だけ） */
@@ -208,27 +213,53 @@ export function maxReachOf(kind: ContactKind, ballSpeed = 0): number {
 /**
  * ボタンを離した tick と、ボールが打点に最も近づく tick の差で評価する。
  * 判定窓（±250ms）の中で最も近い時刻を探し、届く距離になければ MISS。
+ * トスはオーバー（額の上）で上げる。オーバーでは届かない、またはボールが手から TOSS_UNDERHAND_SWITCH_DIST 以上離れていて
+ * アンダー（腰の高さ）の方が近いときだけアンダーで上げる（低いパスに、落ちる前に入れたとき）
  */
-export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number): JudgeResult {
+export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number): JudgeResult & { dist?: number } {
+  const r = judgeAt(s, p, kind, releaseTick, false);
+  if (kind !== 'toss') return r;
+  const u = judgeAt(s, p, kind, releaseTick, true);
+  if (u.tStar < 0) return r;
+  if (r.tStar < 0 || (r.dist > TOSS_UNDERHAND_SWITCH_DIST && u.dist < r.dist)) return { ...u, underhand: true };
+  return r;
+}
+
+function judgeAt(s: GameState, p: Player, kind: ContactKind, releaseTick: number, underhand: boolean): JudgeResult & { dist: number } {
   const W = JUDGE_WINDOW_TICKS;
   let best = Infinity;
   let bestT = -1;
   // 床に落ちた後に離したら、遅れて離した扱いで巻き戻すことはしない（落ちたボールが上がって見えるため）
-  if (s.landTick >= 0 && releaseTick >= s.landTick) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false };
+  if (s.landTick >= 0 && releaseTick >= s.landTick) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false, dist: Infinity };
   // 窓の外側1tickも見て、最小が窓の端に張り付いていないか確かめる
   for (let t = releaseTick - W - 1; t <= releaseTick + W + 1; t++) {
     if (s.landTick >= 0 && t >= s.landTick) break; // 跳ね返ったボールは打てない
     const b = ballAt(s, t);
     if (!b) continue;
-    const d = contactDist(s, p, kind, t, b);
+    const d = contactDist(s, p, kind, t, b, underhand);
     if (d < best) {
       best = d;
       bestT = t;
     }
   }
-  if (bestT < 0 || best > maxReachOf(kind, ballSpeed(s))) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false };
+  if (bestT < 0 || best > maxReachOf(kind, ballSpeed(s))) return { judgment: 'MISS', tStar: -1, dt: 0, dive: false, dist: best };
   const dt = (releaseTick - bestT) / TICK_RATE;
-  return { judgment: judgeOf(dt, kind), tStar: bestT, dt, dive: best > reachOf(kind, ballSpeed(s)) };
+  return { judgment: judgeOf(dt, kind), tStar: bestT, dt, dive: best > reachOf(kind, ballSpeed(s)), dist: best };
+}
+
+/**
+ * トスを上げる選手が向かう打点。オーバー（額の上）の打点に間に合えばそこ、
+ * 間に合わなければアンダー（腰の高さ）の打点（ボールが落ちる前に入れるなら）
+ */
+export function tossPoint(s: GameState, team: TeamId, p: Player): { x: number; z: number; tick: number; underhand: boolean } | null {
+  const over = interceptPoint(s, team, TOSS_HIT_HEIGHT);
+  // 手が届く距離（TOSS_REACH の8割）まで近づければ間に合う
+  const intime = (ip: { x: number; z: number; tick: number }) =>
+    Math.max(0, dist2(p.x, p.z, ip.x, ip.z) - TOSS_REACH * 0.8) / PLAYER_SPEED <= (ip.tick - s.tick) / TICK_RATE;
+  if (over && intime(over)) return { ...over, underhand: false };
+  const under = interceptPoint(s, team, RECEIVE_HIT_HEIGHT);
+  if (under && intime(under)) return { ...under, underhand: true };
+  return over ? { ...over, underhand: false } : null;
 }
 
 /**
@@ -444,7 +475,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
       s.tossTarget = atk.id;
       const zone = attackZone(s, atk);
       const t = toWorld(T, TOSS_TARGET_LX[zone], TOSS_TARGET_LZ);
-      scatter = lerp(TOSS_SCATTER_MAX, TOSS_SCATTER_MIN, eff.acc);
+      scatter = lerp(TOSS_SCATTER_MAX, TOSS_SCATTER_MIN, eff.acc) * (pc.underhand ? TOSS_UNDERHAND_SCATTER_MUL : 1); // アンダーはぶれやすい
       const off = randInCircle(s.rng, scatter);
       tx = t.x + off.x;
       tz = t.z + off.z;
@@ -541,6 +572,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
     effCharge: ce,
     dt: pc.dt,
     dive: !!pc.dive,
+    underhand: kind === 'toss' && !!pc.underhand,
     apex: kind === 'spike' ? Math.max(...s.path.slice(0, 60).map((q) => q.y), from.y) : apex,
     speed: Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z),
     scatter,
@@ -585,7 +617,7 @@ export function tossAimTarget(s: GameState, team: TeamId): Player {
 /** 操作選手がトスの打点の近くにいるか。近くでボタンを押している間は、スティックで動かず向きを選ぶ */
 export function nearTossPoint(s: GameState, team: TeamId): boolean {
   const p = s.players[s.teams[team].controlled];
-  const ip = interceptPoint(s, team, TOSS_HIT_HEIGHT);
+  const ip = tossPoint(s, team, p);
   return ip !== null && Math.hypot(ip.x - p.x, ip.z - p.z) <= TOSS_AIM_MAX_DIST;
 }
 
@@ -836,14 +868,17 @@ export function updateActors(s: GameState): void {
       if (s.lastTouchTeam === T && s.lastContactKind === 'toss' && s.tossTarget >= 0) {
         team.controlled = s.tossTarget;
       } else if (s.lastTouchTeam === T && team.contactsLeft === 2) {
-        // レシーブ後 → セッター。役割があればセッターが（大きく遅れなければ）上げる。なければ最も早く着ける選手
+        // レシーブ後 → セッター。役割があればセッターが（大きく遅れなければ）上げる。なければ最も早く着ける選手。
+        // 低いパスでオーバーに間に合わなくても、ボールが落ちる前に入れるならセッターがアンダーで上げる
         const ip = interceptPoint(s, T, TOSS_HIT_HEIGHT);
+        const setter = setterOf(s, T);
+        const sp = setter && setter.id !== doubleBan ? tossPoint(s, T, setter) : null;
         if (ip) {
           const fast = fastestTo(s, T, ip.x, ip.z, doubleBan);
-          const setter = setterOf(s, T);
-          const useSetter = setter && setter.id !== doubleBan && travelTime(setter, ip.x, ip.z) <= travelTime(fast, ip.x, ip.z) + SETTER_PREFER_SEC;
+          const useSetter =
+            setter && sp && (sp.underhand || travelTime(setter, ip.x, ip.z) <= travelTime(fast, ip.x, ip.z) + SETTER_PREFER_SEC);
           team.controlled = useSetter ? setter.id : fast.id;
-        }
+        } else if (sp?.underhand) team.controlled = setter!.id;
       } else {
         // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）。1本目はセッターに取らせない（2本目を上げるため）。
         // ・相手のサーブ・スパイク（速い球）：前衛・後衛を問わず、着くまでの時間が最も短い選手。後ろへ下がる動きは遅いとして比べる（receiveTime）

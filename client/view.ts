@@ -1,5 +1,5 @@
 // 状態を画面に描く処理（ローカル対戦とオンライン対戦で共通）
-import { aimPoint, ballComingTo, chargeOf, opponentAttacking, tossAimTarget } from '../shared/actions.ts';
+import { aimPoint, ballComingTo, chargeOf, opponentAttacking, tossAimTarget, tossPoint } from '../shared/actions.ts';
 import { roleOf } from '../shared/court.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
 import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
@@ -74,7 +74,8 @@ export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEven
       const p = s.players[e.player];
       const sp = r.project(p.x, p.y + 2.3, p.z);
       // 人の判定は大きく、CPUの判定は表示しない（調整用にデバッグ表示時のみ）
-      if (e.team === o.humanTeam || hud.debugOn) hud.popJudgment(e.judgment, sp.x, sp.y, e.dive && e.judgment !== 'MISS' ? 'フライング！' : undefined);
+      const note = e.judgment === 'MISS' ? undefined : e.dive ? 'フライング！' : e.underhand ? 'アンダー' : undefined;
+      if (e.team === o.humanTeam || hud.debugOn) hud.popJudgment(e.judgment, sp.x, sp.y, note);
     }
   }
   hud.handleEvents(s, events);
@@ -106,14 +107,14 @@ function contactPose(s: GameState, p: Player): Pose | null {
   const c = s.lastContact;
   if (c && c.player === p.id && s.tick - c.tick < CONTACT_POSE_AFTER_TICKS) {
     if (c.kind === 'receive' || c.kind === 'free') return 'pass';
-    if (c.kind === 'toss') return 'set';
+    if (c.kind === 'toss') return c.underhand ? 'pass' : 'set'; // アンダーのトスはカットと同じ形
   }
   if (s.phase !== 'rally' || s.teams[p.team].controlled !== p.id) return null;
   const action = currentAction(s, p.team);
   if (action !== 'receive' && action !== 'free' && action !== 'toss') return null;
   const t = timeToContact(s, p.team);
   if (t < 0 || t > CONTACT_POSE_BEFORE) return null;
-  return action === 'toss' ? 'set' : 'pass';
+  return action === 'toss' && !tossPoint(s, p.team, p)?.underhand ? 'set' : 'pass';
 }
 
 /**

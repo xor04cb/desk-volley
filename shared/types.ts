@@ -103,6 +103,8 @@ export interface PendingContact {
   dt: number;
   /** フライングでの打球 */
   dive?: boolean;
+  /** アンダーでのトス（低いボールを腰の高さで上げる） */
+  underhand?: boolean;
 }
 
 /** 直近の打球の詳細（デバッグ表示用） */
@@ -116,6 +118,7 @@ export interface ContactInfo {
   effCharge: number; // 判定を反映した溜め効果
   dt: number; // タイミングのずれ（秒、+は遅い）
   dive: boolean; // フライングでの打球
+  underhand: boolean; // アンダーでのトス
   apex: number; // 最高点
   speed: number; // 初速
   scatter: number; // ぶれ半径
@@ -126,7 +129,7 @@ export interface ContactInfo {
 }
 
 export type GameEvent =
-  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean }
+  | { type: 'judge'; team: TeamId; player: number; judgment: Judgment; action: ActionKind; dt: number; charge: number; dive?: boolean; underhand?: boolean }
   | { type: 'contact'; info: ContactInfo }
   | { type: 'jump'; player: number; height: number; charge: number }
   | { type: 'block'; player: number; /** ワンタッチ（ブロック側のコートへ上がる）か。false は跳ね返し */ touch: boolean }

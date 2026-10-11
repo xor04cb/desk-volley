@@ -257,12 +257,12 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
       // フライングはスティックの向き（倒していなければ走っていた向き）へ飛ぶ。手が落下予測円に入らなければ上がらない
       const aim = r.dive && r.judgment !== 'MISS' ? aimDive(s, p, diveDirection(p, t.mx, t.mf)) : null;
       if (aim && !aim.ok) r.judgment = 'MISS';
-      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive });
+      s.events.push({ type: 'judge', team, player: p.id, judgment: r.judgment, action, dt: r.dt, charge, dive: r.dive, underhand: r.underhand });
       if (kind === 'spike') p.swung = true;
       if (aim) startDive(s, p, r.tStar, aim);
       if (r.judgment === 'MISS') return;
       if (kind === 'toss') s.tossTarget = tossAimTarget(s, team).id; // 押している間に印を出していた相手へ上げる
-      scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt, dive: r.dive });
+      scheduleContact(s, { tick: r.tStar, team, player: p.id, kind, judgment: r.judgment, charge, mx: t.mx, mf: t.mf, dt: r.dt, dive: r.dive, underhand: r.underhand });
       return;
     }
     default:
@@ -320,7 +320,7 @@ export function step(s: GameState): void {
     s.pending = null;
     const p = s.players[pc.player];
     const b = s.ball.pos;
-    if (s.ball.mode === 'flying' && dist3(b, hitPoint(s, p, pc.kind, s.tick)) <= reachOf(pc.kind, ballSpeed(s)) * 1.5) {
+    if (s.ball.mode === 'flying' && dist3(b, hitPoint(s, p, pc.kind, s.tick, pc.underhand)) <= reachOf(pc.kind, ballSpeed(s)) * 1.5) {
       applyContact(s, pc, s.tick);
     }
   }
@@ -579,17 +579,22 @@ export function timeToContact(s: GameState, team: TeamId): number {
   const kind: ContactKind | null =
     action === 'receive' || action === 'toss' || action === 'serve' || action === 'free' ? action : action === 'spike' ? 'spike' : null;
   if (!kind || s.ball.mode !== 'flying') return -1;
-  let best = Infinity;
-  let bt = -1;
-  for (let i = 0; i < Math.min(s.path.length, 120); i++) {
-    const t = s.pathTick + i + 1;
-    if (t <= s.tick) continue;
-    const d = contactDist(s, p, kind, t, s.path[i]);
-    if (d < best) {
-      best = d;
-      bt = t;
+  const reach = Math.max(reachOf(kind, ballSpeed(s)) * 1.5, maxReachOf(kind, ballSpeed(s)));
+  const at = (underhand: boolean): number => {
+    let best = Infinity;
+    let bt = -1;
+    for (let i = 0; i < Math.min(s.path.length, 120); i++) {
+      const t = s.pathTick + i + 1;
+      if (t <= s.tick) continue;
+      const d = contactDist(s, p, kind, t, s.path[i], underhand);
+      if (d < best) {
+        best = d;
+        bt = t;
+      }
     }
-  }
-  if (bt < 0 || best > Math.max(reachOf(kind, ballSpeed(s)) * 1.5, maxReachOf(kind, ballSpeed(s)))) return -1;
-  return (bt - s.tick) / TICK_RATE;
+    return bt < 0 || best > reach ? -1 : (bt - s.tick) / TICK_RATE;
+  };
+  // トスはオーバーの打点、届かなければアンダーの打点
+  const over = at(false);
+  return over < 0 && kind === 'toss' ? at(true) : over;
 }

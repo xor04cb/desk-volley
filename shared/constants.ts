@@ -89,6 +89,9 @@ export const TOSS_APEX_MAX = 6.0;
 export const TOSS_SCATTER_MAX = 1.6;
 export const TOSS_SCATTER_MIN = 0.15;
 export const TOSS_TARGET_LZ = 0.9; // アタッカー用トスの落下目標（ネットからの距離）
+// 低いパスでオーバーに間に合わないときは、落ちる前に入れればアンダーでトスする。アンダーはぶれやすい 【要調整】
+export const TOSS_UNDERHAND_SCATTER_MUL = 1.6;
+export const TOSS_UNDERHAND_SWITCH_DIST = 0.6; // オーバーの打点でボールが手からこれ以上離れていて、アンダーの方が近ければアンダー(m)
 export const TOSS_TARGET_LX = { left: -3.3, center: 0, right: 3.3 };
 
 // ---- スパイク ----

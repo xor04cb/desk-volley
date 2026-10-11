@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { aimPoint, applyContact, serveHitTick, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import { aimPoint, applyContact, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
+  RECEIVE_HIT_HEIGHT,
   RECEIVE_RECOVER_TICKS,
   SERVE_RECEIVE_APEX_BONUS,
   SET_TARGET,
@@ -12,7 +13,7 @@ import {
   TOSS_HIT_HEIGHT,
   TOSS_TARGET_LZ,
 } from '../shared/constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
+import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, roleOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
 import { formationSpot } from '../shared/ai.ts';
 import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
@@ -36,6 +37,16 @@ function incoming(s: GameState, id: number, opts: { contactsLeft?: number; lastT
   const from = opts.lastTouch === 0 ? v3(p.x + 1, 1, p.z + 2) : v3(p.x, 3, -5);
   launch(s.ball, from, solveByApex(from, p.x, p.z, opts.apex ?? 5));
   computePath(s);
+}
+
+/** チーム0の keep 以外の選手を、コートの左奥の隅へどける（担当選びのテストで邪魔をしないように） */
+function aside(s: GameState, keep: number[]): void {
+  let i = 0;
+  for (const p of s.players) {
+    if (p.team !== 0 || keep.includes(p.id)) continue;
+    p.x = -4.4;
+    p.z = 8.8 - 0.3 * i++;
+  }
 }
 
 /** ボールが選手の打点に最も近づく tick */
@@ -216,7 +227,17 @@ describe('サーブの後の操作', () => {
   const untilLand = (s: GameState) => {
     while (s.landTick < 0 && s.phase === 'rally') step(s);
   };
-  it('サーブの後に操作する前衛は、スティックを倒していなければ他の選手と同じく得意な位置へ動く', () => {
+  it('サーブ側はサーブ前から得意な位置に並ぶので、サーブの後に操作する前衛もそのまま正しい位置にいる', () => {
+    const s = createGame({ seed: 1 });
+    for (const p of s.players) {
+      if (p.team !== 0 || p.id === s.server) continue;
+      const t = formationSpot(s, p);
+      expect(Math.hypot(p.x - t.x, p.z - t.z)).toBeLessThan(0.01);
+      // サーブの前と後で同じ「入れ替わった後の位置」を使う
+      expect(t).toEqual(toWorld(0, ...FORMATION.base[switchedPos(s, p)]));
+    }
+  });
+  it('サーブの後に操作する前衛は、スティックを倒していなければ他の選手と同じく得意な位置にいる', () => {
     const { s, c, x0 } = afterServe([0, 0]);
     untilLand(s);
     const gap = (q: typeof c) => {
@@ -226,7 +247,7 @@ describe('サーブの後の操作', () => {
     // 操作していない選手と同じ動き方（間に合う速さで加速・減速）なので、他の選手と同じくらい位置に着いている
     const others = s.players.filter((q) => q.team === 0 && q.id !== c.id && q.id !== s.server);
     expect(gap(c)).toBeLessThan(Math.max(...others.map(gap)) + 0.2);
-    expect(Math.abs(c.x - x0)).toBeGreaterThan(1); // 元の位置（ローテーションの位置）から動いている
+    expect(Math.abs(c.x - x0)).toBeLessThan(0.5); // サーブ前から得意な位置にいるので、ほとんど動かない
   });
   it('スティックを倒せば、自分で動かせる', () => {
     const { c, x0 } = afterServe([-1, 0]);
@@ -652,6 +673,7 @@ describe('レシーブの担当', () => {
     const s = createGame({ seed: 5 });
     const front = playerAtPosition(s, 0, 2);
     const back = playerAtPosition(s, 0, 5); // 1番はセッターなので、5番を右に置く
+    aside(s, [front.id, back.id]);
     front.x = 3;
     front.z = frontLz;
     back.x = 3;
@@ -673,6 +695,7 @@ describe('レシーブの担当', () => {
     const s = createGame({ seed: 5 });
     const front = playerAtPosition(s, 0, 3);
     const back = playerAtPosition(s, 0, 6);
+    aside(s, [front.id, back.id]);
     [front.x, front.z] = [0, 4.8];
     [back.x, back.z] = [1.6, 7.3];
     const from = v3(0, 3.0, -10);
@@ -716,6 +739,66 @@ describe('レシーブの担当', () => {
   it('山なりの返球（遅い球）は、下がって取れるので今までどおり一番早く着ける選手が取る', () => {
     const { s, front } = spikeTo(1.0, 'free');
     expect(s.teams[0].controlled).toBe(front.id);
+  });
+});
+
+describe('アンダーのトス', () => {
+  /**
+   * 自チームの低いパス（最高点2.5m）がセッターの位置 (0.6, 1.2) へ向かう。
+   * セッターは遠く (-5.5, 1.6) にいてオーバー（額の上）には間に合わないが、腰の高さまで落ちる前には入れる。
+   * オーバーの打点の近くにはOHがいる
+   */
+  const lowPass = () => {
+    const s = createGame({ seed: 5 });
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.aiReadyTick = [1e9, 1e9];
+    const setter = setterOf(s, 0)!;
+    const passer = playerAtPosition(s, 0, 6);
+    const oh = s.players.find((q) => q.team === 0 && q.id !== setter.id && q.id !== passer.id && roleOf(s, q) === 'OH')!;
+    aside(s, [setter.id, passer.id, oh.id]);
+    [setter.x, setter.z] = [-5.5, 1.6];
+    [passer.x, passer.z] = [0, 6];
+    [oh.x, oh.z] = [1.5, 3.5];
+    const from = v3(0, RECEIVE_HIT_HEIGHT, 6);
+    launch(s.ball, from, solveByApex(from, SET_TARGET.lx, SET_TARGET.lz, 2.5));
+    s.lastTouchTeam = 0;
+    s.lastContactKind = 'receive';
+    s.teams[0].contactsLeft = 2;
+    s.teams[0].lastToucher = passer.id;
+    computePath(s);
+    updateActors(s);
+    return { s, setter, oh };
+  };
+  it('セッターはオーバーに間に合わなくても、ボールが落ちる前に入れるならアンダーで上げる担当になる', () => {
+    const { s, setter } = lowPass();
+    expect(tossPoint(s, 0, setter)?.underhand).toBe(true);
+    expect(s.teams[0].controlled).toBe(setter.id); // オーバーに間に合うOHがいても、セッターが上げる
+  });
+  it('アンダーの打点で離すと、アンダーでトスが上がる', () => {
+    const { s, setter } = lowPass();
+    const tp = tossPoint(s, 0, setter)!;
+    [setter.x, setter.z] = [tp.x, tp.z]; // 走り込んだところ
+    let best = Infinity;
+    let hitTick = -1;
+    for (let i = 0; i < s.path.length; i++) {
+      const t = s.pathTick + i + 1;
+      const d = contactDist(s, setter, 'toss', t, s.path[i], true);
+      if (d < best) [best, hitTick] = [d, t];
+    }
+    press(s, 0);
+    while (s.tick < hitTick) step(s);
+    release(s, 0);
+    step(s);
+    expect(s.lastContact?.kind).toBe('toss');
+    expect(s.lastContact?.underhand).toBe(true);
+    expect(s.lastContact?.player).toBe(setter.id);
+    expect(s.lastContact!.apex).toBeGreaterThan(3.5); // 低いパスでも、アタッカーが打てる高さのトスになる
+  });
+  it('オーバーに間に合うときは、今までどおりオーバーで上げる', () => {
+    const { s, setter } = lowPass();
+    [setter.x, setter.z] = [0.6, 2.5];
+    expect(tossPoint(s, 0, setter)?.underhand).toBe(false);
   });
 });
 

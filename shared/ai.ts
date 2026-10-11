@@ -9,7 +9,6 @@ import {
   RECEIVE_HIT_HEIGHT,
   STANDING_REACH,
   TICK_RATE,
-  TOSS_HIT_HEIGHT,
 } from './constants.ts';
 import {
   applyContact,
@@ -28,6 +27,7 @@ import {
   serveToss,
   spikeAim,
   startDive,
+  tossPoint,
   startJump,
 } from './actions.ts';
 import {
@@ -64,14 +64,15 @@ type Spot = readonly [number, number];
 
 /**
  * 操作していない選手の立ち位置（陣形）。
- * サーブ前：サーブ側はローテーションの位置、レシーブ側はサーブレシーブの陣形。
- * ラリー中（サーブの後）：得意な位置へ入れ替わり、攻撃（助走・カバー）と守備（相手の攻撃の向きに合わせる）の陣形
+ * サーブ前：サーブ側は入れ替わった後の得意な位置、レシーブ側はサーブレシーブの陣形。
+ * ラリー中（サーブの後）：得意な位置で、攻撃（助走・カバー）と守備（相手の攻撃の向きに合わせる）の陣形
  */
 export function formationSpot(s: GameState, p: Player): Target {
   const T = p.team;
   const at = (sp: Spot) => toWorld(T, sp[0], sp[1]);
   if (s.rules.system === 'none') return legacySpot(s, p);
-  if (s.phase === 'serve') return at(s.servingTeam === T ? FORMATION.base[positionOf(s, p)] : receiveSpot(s, p));
+  // サーブ側はサーブ前から得意な位置に並ぶ（サーブ側の位置の反則は無い）。レシーブ側はローテーションどおりにサーブレシーブの陣形
+  if (s.phase === 'serve') return at(s.servingTeam === T ? FORMATION.base[switchedPos(s, p)] : receiveSpot(s, p));
   if (s.phase !== 'rally') return { x: p.x, z: p.z };
   const pos = switchedPos(s, p);
   if (ballComingTo(s, T)) {
@@ -226,7 +227,8 @@ export function runAI(s: GameState, T: TeamId): Target | null {
     const cl = team.contactsLeft;
     if (cl >= 2) {
       const kind: ContactKind = cl === 3 ? 'receive' : 'toss';
-      const ip = interceptPoint(s, T, kind === 'receive' ? RECEIVE_HIT_HEIGHT : TOSS_HIT_HEIGHT);
+      // トスはオーバーの打点に間に合わなければ、アンダーの打点へ
+      const ip = kind === 'receive' ? interceptPoint(s, T, RECEIVE_HIT_HEIGHT) : tossPoint(s, T, p);
       tryHit(s, p, kind);
       return ip ? { x: ip.x, z: ip.z } : null;
     }
@@ -284,9 +286,18 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
   const b0 = ballAt(s, s.tick);
   const b1 = ballAt(s, s.tick + 1);
   if (!b0 || !b1) return;
-  const d0 = contactDist(s, p, kind, s.tick, b0);
-  const d1 = contactDist(s, p, kind, s.tick + 1, b1);
-  if (d0 > maxReachOf(kind, ballSpeed(s)) || d1 < d0) return;
+  // 今が打点に最も近づく瞬間か。トスはオーバーで届かなければアンダー（腰の高さ）でも見る
+  const closest = (under: boolean) => {
+    const a = contactDist(s, p, kind, s.tick, b0, under);
+    return a <= maxReachOf(kind, ballSpeed(s)) && contactDist(s, p, kind, s.tick + 1, b1, under) >= a ? a : -1;
+  };
+  let underhand = false;
+  let d0 = closest(false);
+  if (d0 < 0 && kind === 'toss') {
+    d0 = closest(true);
+    underhand = true;
+  }
+  if (d0 < 0) return;
   const dive = d0 > reachOf(kind, ballSpeed(s)); // 普通には届かない：フライング
   if (dive && rand(s.rng) >= AI.diveRate) {
     s.aiMissTick[T] = s.tick; // 飛び込まずに見送る
@@ -321,14 +332,14 @@ function tryHit(s: GameState, p: Player, kind: ContactKind): void {
     if (s.rules.feint && rand(s.rng) < AI.feintRate) charge = 0.05;
   }
   const action: ActionKind = kind === 'spike' || kind === 'feint' ? 'spike' : kind === 'free' ? 'free' : kind === 'toss' ? 'toss' : 'receive';
-  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge, dive });
+  s.events.push({ type: 'judge', team: T, player: p.id, judgment, action, dt, charge, dive, underhand });
   if (kind === 'spike') p.swung = true;
   if (judgment === 'MISS') {
     s.aiMissTick[T] = s.tick;
     return;
   }
   if (dive) startDive(s, p, s.tick);
-  applyContact(s, { tick: s.tick, team: T, player: p.id, kind, judgment, charge, mx, mf, dt, dive }, s.tick);
+  applyContact(s, { tick: s.tick, team: T, player: p.id, kind, judgment, charge, mx, mf, dt, dive, underhand }, s.tick);
 }
 
 function aiServe(s: GameState, T: TeamId): void {
