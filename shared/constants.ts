@@ -155,8 +155,9 @@ export const DIVE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 /** 相手からのボールがネットからこの距離より奥に落ちるときは、後衛がレシーブする 【要調整】 */
 export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
 
-// 相手のスパイク（速い球）は、打点より前（ネット側）にいて後ろへ下がらないと取れない選手には取らせない 【要調整】
-export const RECEIVE_BACKSTEP_MAX = 0.5; // 打点がこれ以上後ろにある選手は候補から外す(m)
+// 相手のサーブ・スパイク（速い球）を取る選手は、着くまでの時間で選ぶ。後ろ（エンドライン側）へ下がるのは前や横より遅いとして数える 【要調整】
+export const RECEIVE_BACKSTEP_MAX = 1.0; // 打点がこれ以上後ろにある選手（大きく下がらないと取れない選手）は候補から外す(m)
+export const RECEIVE_BACKPEDAL_RATE = 0.6; // 後ろへ下がる速さ（普通の速さに対する割合）
 
 // ---- 操作していない選手の位置取りの動き ----
 // 打球ごとに陣形の目標が変わっても、全員が全力で走り直さないようにする 【要調整】

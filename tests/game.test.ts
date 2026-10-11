@@ -532,9 +532,15 @@ describe('レシーブの担当', () => {
     updateActors(s);
     return { s, front, back };
   };
-  it('前（アタックラインより手前）以外のボールは、前衛が近くても後衛がレシーブする', () => {
+  it('山なりの返球は、前（アタックラインより手前）以外なら前衛が近くても後衛がレシーブする', () => {
     const { s, back } = setup(4.5);
+    s.lastContactKind = 'free';
+    updateActors(s);
     expect(s.teams[0].controlled).toBe(back.id);
+  });
+  it('スパイクは、アタックラインより奥でも前衛が下がらずに取れるなら前衛が取る', () => {
+    const { s, front } = setup(4.5); // 前衛が打点にいる
+    expect(s.teams[0].controlled).toBe(front.id);
   });
   it('前のボールは近い前衛がレシーブする', () => {
     const { s, front } = setup(2);

@@ -35,6 +35,7 @@ import {
   PLAYER_SPEED,
   RECEIVE_APEX_MAX,
   RECEIVE_APEX_MIN,
+  RECEIVE_BACKPEDAL_RATE,
   RECEIVE_BACKSTEP_MAX,
   RECEIVE_EASY_SPEED,
   RECEIVE_SPEED_PENALTY,
@@ -759,8 +760,8 @@ export function nearestTo(s: GameState, team: TeamId, x: number, z: number, excl
 /**
  * 地点に最も早く着ける選手。row で前衛・後衛に絞る。
  * skipBlockers ならブロックに跳んでいる選手を除く（前衛に絞っていて前衛が全員跳んでいれば後衛から、全員跳んでいれば除かない）。
- * noBackstep なら、地点より RECEIVE_BACKSTEP_MAX 以上前（ネット側）にいる選手を除く（後ろに下がりながらでは速い球を取れないため）。
- * 除いた結果だれもいなければ、noBackstep は無いものとして選ぶ
+ * backpedal なら、地点より RECEIVE_BACKSTEP_MAX 以上前（ネット側）にいる選手を除き（後ろへ大きく下がりながらでは速い球を取れない）、
+ * 残りを後ろへ下がる動きを遅いものとして比べる（receiveTime）。除いた結果だれもいなければ、除かずに普通に選ぶ
  */
 export function fastestTo(
   s: GameState,
@@ -770,12 +771,12 @@ export function fastestTo(
   exclude: number,
   row: 'all' | 'back' | 'front' = 'all',
   skipBlockers = false,
-  noBackstep = false,
+  backpedal = false,
 ): Player {
   const inRow = (p: Player) => row === 'all' || isFrontRow(positionOf(s, p)) === (row === 'front');
   if (skipBlockers && s.players.every((p) => p.team !== team || p.id === exclude || !inRow(p) || p.jump === 'block')) {
     // 前衛から選ぶのに前衛が全員ブロックに跳んでいる → 後衛も含めて跳んでいない選手から。全員跳んでいれば除かない
-    if (row === 'front') return fastestTo(s, team, x, z, exclude, 'all', skipBlockers, noBackstep);
+    if (row === 'front') return fastestTo(s, team, x, z, exclude, 'all', skipBlockers, backpedal);
     skipBlockers = false;
   }
   const lz = toLocal(team, x, z).lz;
@@ -785,15 +786,27 @@ export function fastestTo(
     if (p.team !== team || p.id === exclude) continue;
     if (!inRow(p)) continue;
     if (skipBlockers && p.jump === 'block') continue;
-    if (noBackstep && lz - toLocal(team, p.x, p.z).lz > RECEIVE_BACKSTEP_MAX) continue;
-    const t = travelTime(p, x, z);
+    if (backpedal && lz - toLocal(team, p.x, p.z).lz > RECEIVE_BACKSTEP_MAX) continue;
+    const t = backpedal ? receiveTime(p, x, z) : travelTime(p, x, z);
     if (t < bt) {
       bt = t;
       best = p;
     }
   }
-  if (!best && noBackstep) return fastestTo(s, team, x, z, exclude, row, skipBlockers, false);
+  if (!best && backpedal) return fastestTo(s, team, x, z, exclude, row, skipBlockers, false);
   return best!;
+}
+
+/**
+ * 速い球（サーブ・スパイク）を取りに行くのにかかる時間。後ろ（エンドライン側）へ下がる分は
+ * RECEIVE_BACKPEDAL_RATE の速さでしか動けないとして数える（前や横へは普通の速さ）
+ */
+export function receiveTime(p: Player, x: number, z: number): number {
+  const air = travelTime(p, p.x, p.z); // 空中なら着地までの時間
+  const a = toLocal(p.team, p.x, p.z);
+  const b = toLocal(p.team, x, z);
+  const dz = b.lz - a.lz; // 正なら後ろへ下がる
+  return air + Math.hypot(b.lx - a.lx, dz > 0 ? dz / RECEIVE_BACKPEDAL_RATE : dz) / PLAYER_SPEED;
 }
 
 /** 次に触るべきチームが team か（ボールが team 側に来る・留まる） */
@@ -832,21 +845,18 @@ export function updateActors(s: GameState): void {
           team.controlled = useSetter ? setter.id : fast.id;
         }
       } else {
-        // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）：
-        // 前（ネットから FRONT_RECEIVE_DEPTH 以内）以外は後衛（サーブカットは除く）。
-        // 相手のフェイントが前に落ちるときは、ブロックに跳んでいない前衛のうち一番早く着ける選手（前衛が全員跳んでいれば後衛）。
-        // 自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）。
-        // 相手のスパイク（速い球）は、後ろへ下がらないと取れない選手（打点よりネット側にいる選手）には取らせない
+        // 1本目のボール（相手から来た、または自チームのブロックで跳ね返った）。1本目はセッターに取らせない（2本目を上げるため）。
+        // ・相手のサーブ・スパイク（速い球）：前衛・後衛を問わず、着くまでの時間が最も短い選手。後ろへ下がる動きは遅いとして比べる（receiveTime）
+        // ・それ以外で前（ネットから FRONT_RECEIVE_DEPTH 以内）より奥に落ちるボールは後衛
+        // ・相手のフェイントが前に落ちるときは、ブロックに跳んでいない前衛のうち一番早く着ける選手（前衛が全員跳んでいれば後衛）
+        // ・自チームのブロック後に前へ落ちるボールは、前衛・後衛を問わず距離が近い選手（跳んでいたブロッカーも着地を待たずに候補にする）
         const ip = interceptPoint(s, T, RECEIVE_HIT_HEIGHT);
         let row: 'all' | 'back' | 'front' = 'all';
         let nearest = false;
         let skipBlockers = false;
-        // 1本目はセッターに取らせない（2本目を上げるため）。
-        // サーブカットは前衛・後衛を問わず受ける人の中から。後ろへ下がらないと取れない人には取らせない
-        const serve = s.lastTouchTeam !== T && s.lastContactKind === 'serve';
-        const noBackstep = s.lastTouchTeam !== T && (s.lastContactKind === 'spike' || serve);
+        const fastBall = s.lastTouchTeam !== T && (s.lastContactKind === 'spike' || s.lastContactKind === 'serve');
         const exclude = team.contactsLeft === 3 ? (setterOf(s, T)?.id ?? -1) : doubleBan;
-        if (!serve && ip && team.contactsLeft === 3) {
+        if (!fastBall && ip && team.contactsLeft === 3) {
           const front = toLocal(T, ip.x, ip.z).lz <= FRONT_RECEIVE_DEPTH;
           if (!front) row = 'back';
           else if (s.lastContactKind === 'feint') {
@@ -854,7 +864,7 @@ export function updateActors(s: GameState): void {
             skipBlockers = true;
           } else if (s.lastTouchTeam === T && s.lastContactKind === 'block') nearest = true;
         }
-        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, exclude) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, noBackstep)).id;
+        if (ip) team.controlled = (nearest ? nearestTo(s, T, ip.x, ip.z, exclude) : fastestTo(s, T, ip.x, ip.z, exclude, row, skipBlockers, fastBall)).id;
       }
     } else if (opponentAttacking(s, T)) {
       // 相手の攻撃 → ネット際の前衛でブロック
