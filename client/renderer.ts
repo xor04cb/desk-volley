@@ -12,6 +12,7 @@ import {
 } from '../shared/constants.ts';
 import type { ContactKind } from '../shared/types.ts';
 import type { Vec3 } from '../shared/vec.ts';
+import { Effects } from './effects.ts';
 
 /** 見た目だけの調整値 */
 export const VIEW = {
@@ -288,6 +289,8 @@ export class Renderer {
   private marker: { ring: THREE.Mesh; arcs: THREE.Mesh[]; timing: THREE.Mesh; lastCharge: number };
   private tossAim: THREE.Mesh;
   private shotAim: THREE.Group;
+  /** 見た目だけのエフェクト */
+  readonly fx: Effects;
   /** 視点。0=チーム0の後ろから、1=チーム1の後ろから */
   view: 0 | 1 = 0;
 
@@ -303,6 +306,7 @@ export class Renderer {
     this.scene.add(sun);
 
     this.buildCourt();
+    this.fx = new Effects(this.scene);
 
     const r = BALL_RADIUS * VIEW.ballScale;
     this.ball = makeVolleyball(r);
@@ -493,6 +497,7 @@ export class Renderer {
     if (w > 1e-4 && dt > 0) {
       this.ball.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(this.ballSpin.clone().divideScalar(w), w * dt));
     }
+    this.fx.trackBall(pos, vel ? Math.hypot(vel.x, vel.y, vel.z) : 0);
     this.ballShadow.position.set(pos.x, 0.015, pos.z);
     const s = Math.max(0.4, 1 - pos.y * 0.08);
     this.ballShadow.scale.set(s, s, s);
@@ -640,6 +645,7 @@ export class Renderer {
   }
 
   render(): void {
+    this.fx.update(this.camera); // エフェクトを進め、揺れがあればカメラをずらす（updateCamera の後に呼ぶ）
     this.gl.render(this.scene, this.camera);
   }
 }

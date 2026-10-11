@@ -2,7 +2,8 @@
 import { aimPoint, ballComingTo, chargeOf, opponentAttacking, tossAimTarget, tossPoint } from '../shared/actions.ts';
 import { roleOf } from '../shared/court.ts';
 import { currentAction, timeToContact } from '../shared/game.ts';
-import type { ActionKind, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
+import type { ActionKind, ContactInfo, GameEvent, GameState, Player, TeamId } from '../shared/types.ts';
+import { FX_COLORS } from './effects.ts';
 import type { Hud } from './hud.ts';
 import type { Pose, Renderer } from './renderer.ts';
 
@@ -52,6 +53,7 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
     const role = roleOf(s, p);
     hud.setNameTag(sp.visible ? (role ? `${p.name} ${role}` : p.name) : null, sp.x, sp.y);
   }
+  landingFx(r, s);
   r.updateCamera();
   r.render();
   hud.update(s, actions);
@@ -62,14 +64,24 @@ export function drawState(r: Renderer, hud: Hud, s: GameState, o: ViewOptions): 
 export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEvent[], o: ViewOptions): void {
   for (const e of events) {
     // 打球に合わせてボールを回す（見た目だけ）
-    if (e.type === 'contact') r.spinBall(e.info.kind, s.ball.vel, e.info.charge);
-    else if (e.type === 'block') {
+    if (e.type === 'contact') {
+      r.spinBall(e.info.kind, s.ball.vel, e.info.charge);
+      contactFx(r, s, e.info);
+    } else if (e.type === 'net') {
+      r.spinBall('net', s.ball.vel);
+      r.fx.burst(s.ball.pos, 0xffffff, 0.3);
+      r.fx.setTrail(false);
+    } else if (e.type === 'point' && e.reason === 'in' && s.lastContact?.kind === 'spike' && s.lastContact.team === e.team) {
+      r.fx.shake(0.15); // スパイクが決まった
+    } else if (e.type === 'block') {
       r.spinBall('block', s.ball.vel);
+      r.fx.hit(s.ball.pos, e.touch ? FX_COLORS.touch : FX_COLORS.stuff, e.touch ? 0.5 : 0.9);
+      r.fx.setTrail(!e.touch);
+      if (!e.touch) r.fx.shake(0.12);
       // ブロックに当たったことを、ボールの位置に出す（ワンタッチ＝ブロック側のボール、跳ね返し＝打った側のボール）
       const sp = r.project(s.ball.pos.x, s.ball.pos.y + 0.6, s.ball.pos.z);
       hud.popText(e.touch ? 'ワンタッチ' : 'ブロック！', e.touch ? 'touch' : 'stuff', sp.x, sp.y);
     }
-    else if (e.type === 'net') r.spinBall('net', s.ball.vel);
     if (e.type === 'judge') {
       const p = s.players[e.player];
       const sp = r.project(p.x, p.y + 2.3, p.z);
@@ -79,6 +91,27 @@ export function showEvents(r: Renderer, hud: Hud, s: GameState, events: GameEven
     }
   }
   hud.handleEvents(s, events);
+}
+
+/** 打った瞬間のエフェクト：判定の色の光と粒。強く打つほど大きい。スパイク・サーブは軌跡を出す */
+function contactFx(r: Renderer, s: GameState, c: ContactInfo): void {
+  const color = c.judgment === 'PERFECT' ? FX_COLORS.perfect : c.judgment === 'GOOD' ? FX_COLORS.good : FX_COLORS.bad;
+  const fast = (lo: number, hi: number) => Math.min(Math.max((c.speed - lo) / (hi - lo), 0), 1);
+  const strength =
+    c.kind === 'spike' ? 0.5 + 0.5 * fast(9, 20) : c.kind === 'serve' ? 0.3 + 0.6 * fast(10, 24) : c.kind === 'toss' || c.kind === 'feint' ? 0.2 : 0.3;
+  r.fx.hit(s.ball.pos, color, strength);
+  r.fx.setTrail(c.kind === 'spike' || c.kind === 'serve');
+  if (c.kind === 'spike' && strength > 0.85) r.fx.shake(0.06); // 強打
+}
+
+/** 床に落ちた瞬間のエフェクト（落ちたことはイベントが無いので、landTick の変化で見る） */
+const lastLand = new WeakMap<Renderer, number>();
+function landingFx(r: Renderer, s: GameState): void {
+  if (s.landTick < 0 || lastLand.get(r) === s.landTick) return;
+  lastLand.set(r, s.landTick);
+  const k = s.lastContact?.kind;
+  r.fx.impact(s.landX, s.landZ, 0xffffff, k === 'spike' ? 1 : k === 'serve' ? 0.7 : 0.35);
+  r.fx.setTrail(false);
 }
 
 const SERVE_SWING_TICKS = 24; // サーブを打ったあと振り下ろしの姿勢を見せる長さ（0.4秒）
