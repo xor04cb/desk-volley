@@ -884,9 +884,10 @@ export function ballComingTo(s: GameState, team: TeamId): boolean {
   return sideOf(s.ball.pos.z) === team;
 }
 
-/** 相手が攻撃しようとしているか（トス済み、または残り1回） */
+/** 相手が攻撃しようとしているか（トス済み、残り1回、または自チームの長い返球を相手がダイレクトで叩ける） */
 export function opponentAttacking(s: GameState, team: TeamId): boolean {
   const opp = (1 - team) as TeamId;
+  if (s.lastTouchTeam === team) return directChance(s, opp) !== null;
   return s.lastTouchTeam === opp && ballComingTo(s, opp) && (s.lastContactKind === 'toss' || s.teams[opp].contactsLeft === 1);
 }
 
@@ -957,8 +958,9 @@ export function updateActors(s: GameState): void {
       // 自チームのブロックで相手コートへ返した：ブロックした前衛をそのまま操作する
       // （相手のスパイクの瞬間にレシーブ役の後衛へ切り替わっているので戻す）
       team.controlled = team.lastToucher;
-    } else if (s.lastTouchTeam === T && s.lastContactKind === 'serve') {
-      // サーブを打った後は前衛を操作する（サーバーは自動で守備位置へ戻る）
+    } else if (s.phase === 'rally') {
+      // ボールが相手コートにある（サーブの後・自チームの返球の後・相手が1本目や2本目を触った後）：
+      // ボールの正面の前衛を操作する（ツーアタックやダイレクトにもブロックできるように。サーバーは自動で守備位置へ戻る）
       team.controlled = blockerFor(s, T).id;
     }
   }

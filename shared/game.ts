@@ -8,6 +8,7 @@ import {
   DIVE_SLIDE_TICKS,
   DT,
   HISTORY_TICKS,
+  JUMP_HEIGHT_MIN,
   LANDING_GRACE_TICKS,
   OFFBALL,
   PLAYER_SPEED,
@@ -34,6 +35,7 @@ import {
   maxReachOf,
   opponentAttacking,
   reachOf,
+  riseTime,
   scheduleContact,
   serveHitTick,
   serveToss,
@@ -293,8 +295,11 @@ export function currentAction(s: GameState, team: TeamId): ActionKind {
     if (t.contactsLeft <= 0) return 'none';
     if (t.lastToucher === p.id && s.lastTouchTeam === team && s.lastContactKind !== 'block') return 'none';
     if (t.contactsLeft === 3) {
-      // 相手の長いカット・トスがネット際へ高く来たら、前衛はダイレクトで叩ける（跳んで、空中でもう一度押して打つ）
-      return directChance(s, team) && isFrontRow(positionOf(s, p)) ? 'jump' : 'receive';
+      // 相手の長いカット・トスがネット際へ高く来たら、前衛はダイレクトで叩ける（跳んで、空中でもう一度押して打つ）。
+      // ボールが高いうちに離せばジャンプ、下りてきてから（跳んでももう手が届かない頃から）離せばレシーブ
+      const d = directChance(s, team);
+      const canJump = d !== null && s.tick < d.tick - Math.round(riseTime(JUMP_HEIGHT_MIN) * TICK_RATE);
+      return canJump && isFrontRow(positionOf(s, p)) ? 'jump' : 'receive';
     }
     if (t.contactsLeft === 2) {
       const front = isFrontRow(positionOf(s, p)) && toLocal(team, p.x, p.z).lz < 3.5;

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { aimPoint, applyContact, ballComingTo, directChance, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
+import { aimPoint, applyContact, ballComingTo, blockerFor, directChance, opponentAttacking, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
+  JUMP_HEIGHT_MIN,
   RECEIVE_HIT_HEIGHT,
   RECEIVE_RECOVER_TICKS,
   SERVE_RECEIVE_APEX_BONUS,
@@ -15,7 +16,7 @@ import {
 } from '../shared/constants.ts';
 import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, roleOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
 import { formationSpot } from '../shared/ai.ts';
-import { createGame, currentAction, press, release, setStick, step } from '../shared/game.ts';
+import { createGame, currentAction, press, release, setStick, step, timeToContact } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
 import { computePath } from '../shared/actions.ts';
 import type { ContactInfo, ContactKind, GameEvent, GameState, TeamId } from '../shared/types.ts';
@@ -823,6 +824,28 @@ describe('アンダーのトス', () => {
   });
 });
 
+describe('ボールが相手コートにあるときの操作', () => {
+  it('相手が1本目を触った後（ツーアタックもありうる）は、ボールの正面の前衛を操作する', () => {
+    const s = createGame({ seed: 5 });
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.aiReadyTick = [1e9, 1e9];
+    // 相手のカットが相手コートのセッターの位置 (-0.6, -1.2) へ上がる
+    const from = v3(0, RECEIVE_HIT_HEIGHT, -6);
+    launch(s.ball, from, solveByApex(from, -0.6, -1.2, 4.5));
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'receive';
+    s.teams[1].contactsLeft = 2;
+    s.teams[0].contactsLeft = 3;
+    s.teams[0].controlled = playerAtPosition(s, 0, 6).id; // 直前は後衛を操作していた
+    computePath(s);
+    updateActors(s);
+    const c = s.players[s.teams[0].controlled];
+    expect(isFrontRow(positionOf(s, c))).toBe(true);
+    expect(c.id).toBe(blockerFor(s, 0).id);
+  });
+});
+
 describe('ダイレクト', () => {
   /** 相手（チーム1）のカットが長く、ネットを越えて自コートの (0.5, landLz) へ落ちる（最高点 apex） */
   const overpass = (landLz: number, apex: number, humans: [boolean, boolean] = [true, false], fromZ = -3) => {
@@ -849,6 +872,30 @@ describe('ダイレクト', () => {
     expect(isFrontRow(positionOf(s, c))).toBe(true);
     expect(currentAction(s, 0)).toBe('jump');
   });
+  it('ボールが高いうちはジャンプ、手の高さまで下りてくる直前からはレシーブになる（どちらで返すか選べる）', () => {
+    const s = overpass(1.0, 4.2);
+    const d = directChance(s, 0)!;
+    expect(currentAction(s, 0)).toBe('jump');
+    const last = d.tick - Math.round(riseTime(JUMP_HEIGHT_MIN) * TICK_RATE); // 一番低いジャンプでも間に合う最後の tick
+    while (s.tick < last - 1) step(s);
+    expect(currentAction(s, 0)).toBe('jump');
+    step(s);
+    expect(currentAction(s, 0)).toBe('receive');
+    // レシーブで離すと、前衛がそのまま上げる
+    const c = s.teams[0].controlled;
+    press(s, 0);
+    let hit = false;
+    for (let i = 0; i < 90 && !hit; i++) {
+      if (timeToContact(s, 0) >= 0 && timeToContact(s, 0) < 0.02) {
+        release(s, 0);
+      }
+      step(s);
+      hit = s.lastContact?.team === 0;
+    }
+    expect(hit).toBe(true);
+    expect(s.lastContact?.kind).toBe('receive');
+    expect(s.lastContact?.player).toBe(c);
+  });
   it('深く来るカットや低いボールは、今までどおりレシーブ', () => {
     expect(directChance(overpass(5, 4.5), 0)).toBeNull(); // ネット際で打てる高さを通らない
     const low = overpass(1.0, 2.8, [true, false], -1.5); // ネットをすれすれで越える低いボール（自コートで2.6m）
@@ -860,6 +907,24 @@ describe('ダイレクト', () => {
     const s = overpass(1.0, 4.2);
     s.lastContactKind = 'serve';
     expect(directChance(s, 0)).toBeNull();
+  });
+  it('相手（チーム1）から見ると、自分の長いカットは「相手の攻撃」で、ボールの正面の前衛がブロックに入る', () => {
+    const s = overpass(1.0, 4.2);
+    expect(opponentAttacking(s, 1)).toBe(true);
+    const b = s.players[s.teams[1].controlled];
+    expect(isFrontRow(positionOf(s, b))).toBe(true);
+    expect(b.id).toBe(blockerFor(s, 1).id);
+    expect(currentAction(s, 1)).toBe('block');
+  });
+  it('CPUは相手のダイレクトにブロックで跳ぶ', () => {
+    const s = overpass(1.0, 4.2, [false, false]);
+    s.aiReadyTick = [s.tick, s.tick];
+    let jumped = false;
+    for (let i = 0; i < 120 && !jumped; i++) {
+      step(s);
+      jumped = s.players.some((p) => p.team === 1 && p.jump === 'block');
+    }
+    expect(jumped).toBe(true);
   });
   it('CPUも長いカットはダイレクトで叩きに行く', () => {
     const s = overpass(1.0, 4.2, [false, false]);
