@@ -62,6 +62,8 @@ export class Hud {
   private banner: HTMLDivElement;
   private bannerUntil = 0;
   debugOn = false;
+  /** デバッグ表示の末尾に足す行（オンラインの遅延など） */
+  debugExtra = '';
 
   constructor(parent: HTMLElement, private opts: HudOptions) {
     this.root = el('div', 'hud', parent);
@@ -111,7 +113,7 @@ export class Hud {
     if (performance.now() > this.bannerUntil) this.banner.classList.remove('show');
 
     this.debug.style.display = this.debugOn ? 'block' : 'none';
-    if (this.debugOn) this.debug.textContent = debugText(s, this.opts.mainTeam, actions);
+    if (this.debugOn) this.debug.textContent = debugText(s, this.opts.mainTeam, actions) + (this.debugExtra ? `\n${this.debugExtra}` : '');
   }
 
   /** 操作中の選手の名前を足元に出す */

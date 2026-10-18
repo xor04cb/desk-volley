@@ -185,7 +185,22 @@ export const STICK_DEADZONE = 0.15;
 // ---- 進行 ----
 export const POINT_PAUSE = 1.8; // 得点後スコア表示の秒数
 export const LANDING_GRACE_TICKS = 15; // 接地からの得点確定待ち（遅れて離した入力やラグ補償で巻き戻す余地。250ms）
-export const HISTORY_TICKS = 30; // ボール・選手の位置を保存するtick数
+/** オンラインのラグ補償で巻き戻す最大tick数（250ms。往復150msの遅延でも画面に見えていた時点まで戻れる。得点確定待ちと同じ） */
+export const MAX_REWIND_TICKS = LANDING_GRACE_TICKS;
+// ボール・選手の位置を保存するtick数（判定窓＋ラグ補償の巻き戻しより長く）
+export const HISTORY_TICKS = JUDGE_WINDOW_TICKS + MAX_REWIND_TICKS + 4;
+
+// ---- オンライン ----
+export const NET = {
+  port: 8787, // サーバーの既定ポート（環境変数 PORT で変えられる）
+  path: '/ws', // WebSocket の接続先パス
+  snapshotEvery: 2, // 状態を何tickごとに送るか（2=30Hz）【要調整】
+  codeDigits: 4, // 部屋コードの桁数
+  pingMs: 1000, // 時刻合わせの間隔（最初の数回は短く）
+  pingSamples: 8, // 時刻合わせに使う直近の回数（往復が最も短かった回を使う）
+  interpBufferTicks: 3, // ボールと他の選手を、届いた状態からさらにこれだけ遅らせて補間する（50ms）【要調整】
+  smoothing: 0.15, // 表示の補正（予測のずれ・時刻の推定の変化）を毎フレームこの割合ずつ戻す
+};
 
 // ---- 練習モード ----
 export const PRACTICE = {

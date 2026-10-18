@@ -190,6 +190,52 @@ describe('ブロックの後の操作', () => {
     expect(after.length).toBeGreaterThan(0);
     expect(after.every((id) => id === blocker.id)).toBe(true);
   });
+
+  /**
+   * 相手のトスにブロックで跳ぶ。late=画面の遅れで、跳ぶ入力がサーバーに届くのが遅れる tick 数。
+   * lag=ラグ補償（入力に付いてくる「画面に見えていた tick」が、届いた tick よりこれだけ前）
+   */
+  const blockWithLag = (late: number, lag: number): boolean => {
+    const s = createGame({ seed: 2, rules: { feint: false } });
+    for (const p of s.players) {
+      const [lx, lz] = (p.team === 0 ? FORMATION.defense : FORMATION.offense)[positionOf(s, p)];
+      const w = toWorld(p.team, lx, lz);
+      p.x = w.x;
+      p.z = w.z;
+    }
+    const atk = playerAtPosition(s, 1, 3);
+    const f = toWorld(1, SET_TARGET.lx, SET_TARGET.lz);
+    const t = toWorld(1, 0, TOSS_TARGET_LZ);
+    const from = v3(f.x, TOSS_HIT_HEIGHT, f.z);
+    launch(s.ball, from, solveByApex(from, t.x, t.z, 5));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'toss';
+    s.tossTarget = atk.id;
+    s.teams[1].contactsLeft = 1;
+    s.aiReadyTick = [s.tick, s.tick];
+    s.teams[0].lag = lag;
+    computePath(s);
+    updateActors(s);
+    s.players[s.teams[0].controlled].x = t.x;
+    const hit = interceptPoint(s, 1, STANDING_REACH + 0.9)!;
+    const jumpAt = hit.tick - Math.round(riseTime(BLOCK_JUMP_MAX) * TICK_RATE) - 4 + late;
+    for (let i = 0; i < 300 && s.phase === 'rally'; i++) {
+      if (s.tick === jumpAt - 30) press(s, 0, s.tick - lag);
+      if (s.tick === jumpAt) release(s, 0, s.tick - lag);
+      step(s);
+      if (s.events.some((e) => e.type === 'block')) return true;
+    }
+    return false;
+  };
+
+  it('オンラインで画面が遅れていても、画面で間に合っていたブロックは当たる（ラグ補償）', () => {
+    expect(blockWithLag(0, 0)).toBe(true);
+    expect(blockWithLag(32, 0)).toBe(true); // これより遅いと間に合わない
+    expect(blockWithLag(44, 0)).toBe(false); // 届くのが200ms遅れると、補償なしでは間に合わない
+    expect(blockWithLag(44, 12)).toBe(true); // 画面では32 tick 遅れ（間に合っていた）
+  });
 });
 
 describe('サーブの後の操作', () => {

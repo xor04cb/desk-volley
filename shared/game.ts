@@ -29,6 +29,7 @@ import {
   computePath,
   contactDist,
   directChance,
+  historyAt,
   hitPoint,
   interceptPoint,
   judgeRelease,
@@ -79,7 +80,7 @@ export interface GameOptions {
 }
 
 function makeTeam(human: boolean): Team {
-  return { score: 0, setsWon: 0, rotation: 0, contactsLeft: 3, lastToucher: -1, controlled: 0, pressTick: -1, mx: 0, mf: 0, human };
+  return { score: 0, setsWon: 0, rotation: 0, contactsLeft: 3, lastToucher: -1, controlled: 0, pressTick: -1, mx: 0, mf: 0, human, lag: 0 };
 }
 
 export function createGame(opts: GameOptions = {}): GameState {
@@ -233,12 +234,19 @@ export function press(s: GameState, team: TeamId, tick = s.tick): void {
   if (s.phase === 'serve' && s.servingTeam === team && !s.serveTossed && t.controlled === s.server) serveToss(s);
 }
 
-/** ボタンを離した。この瞬間に動作が確定する */
+/**
+ * ボタンを離した。この瞬間に動作が確定する。
+ * オンラインでは tick にその人の画面に見えていたボールの tick を渡す（ラグ補償）。
+ * 自分の選手は先行表示しているので、選手は今の位置、ボールは tick の位置で動作と判定を決める
+ */
 export function release(s: GameState, team: TeamId, tick = s.tick): void {
   const t = s.teams[team];
   if (t.pressTick < 0) return;
-  const p = s.players[t.controlled];
-  const action = currentAction(s, team);
+  const lag = Math.max(0, s.tick - tick);
+  // 操作する選手も画面に見えていた時点のもの（相手のスパイクで切り替わる前に押したブロックなど）
+  const seen = lag > 0 ? historyAt(s, tick)?.controlled[team] : undefined;
+  const p = s.players[seen ?? t.controlled];
+  const action = lag > 0 ? withBallAt(s, tick, () => currentAction(s, team)) : currentAction(s, team);
   const charge = chargeOf(t.pressTick, tick, action);
   t.pressTick = -1;
   switch (action) {
@@ -256,7 +264,7 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
     case 'free': {
       if (s.pending && s.pending.team === team) return;
       const kind: ContactKind = action;
-      const r = judgeRelease(s, p, kind, tick);
+      const r = judgeRelease(s, p, kind, tick, lag);
       // フライングはスティックの向き（倒していなければ走っていた向き）へ飛ぶ。手が落下予測円に入らなければ上がらない
       const aim = r.dive && r.judgment !== 'MISS' ? aimDive(s, p, diveDirection(p, t.mx, t.mf)) : null;
       if (aim && !aim.ok) r.judgment = 'MISS';
@@ -271,6 +279,40 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
     }
     default:
       return;
+  }
+}
+
+/**
+ * ボールと時計だけ tick の状態に戻して fn を実行し、元に戻す（選手は今のまま）。
+ * オンラインのラグ補償で、その人の画面に見えていた状況で動作を決めるのに使う
+ */
+export function withBallAt<T>(s: GameState, tick: number, fn: () => T): T {
+  const h = tick < s.tick ? historyAt(s, tick) : null;
+  if (!h) return fn();
+  const saved = {
+    tick: s.tick,
+    ball: s.ball,
+    path: s.path,
+    pathTick: s.pathTick,
+    predLandTick: s.predLandTick,
+    predLandX: s.predLandX,
+    predLandZ: s.predLandZ,
+    landTick: s.landTick,
+    controlled: [s.teams[0].controlled, s.teams[1].controlled],
+  };
+  s.tick = tick;
+  s.teams[0].controlled = h.controlled[0];
+  s.teams[1].controlled = h.controlled[1];
+  s.ball = { pos: { ...h.ball }, vel: { ...h.vel }, mode: h.mode, grounded: h.grounded, drop: h.drop };
+  if (s.landTick > tick) s.landTick = -1;
+  computePath(s);
+  try {
+    return fn();
+  } finally {
+    const { controlled, ...rest } = saved;
+    Object.assign(s, rest);
+    s.teams[0].controlled = controlled[0];
+    s.teams[1].controlled = controlled[1];
   }
 }
 
@@ -578,6 +620,7 @@ function recordHistory(s: GameState): void {
     grounded: s.ball.grounded,
     drop: s.ball.drop,
     players,
+    controlled: [s.teams[0].controlled, s.teams[1].controlled],
   });
   if (s.history.length > HISTORY_TICKS) s.history.shift();
 }

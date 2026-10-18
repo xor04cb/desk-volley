@@ -30,11 +30,11 @@ import {
   FEINT_MAX_DIST,
   FRONT_RECEIVE_DEPTH,
   G,
-  HISTORY_TICKS,
   JUDGE_EFFECT,
   JUDGE_WINDOW_TICKS,
   JUMP_HEIGHT_MAX,
   JUMP_HEIGHT_MIN,
+  MAX_REWIND_TICKS,
   NET_HEIGHT,
   PLAYER_SPEED,
   RECEIVE_APEX_MAX,
@@ -182,8 +182,8 @@ export function reachOf(kind: ContactKind, ballSpeed = 0): number {
  * スパイクは落下予測円の中にいれば横のずれを無視し、下りてくるボールと手の高さの差だけで見る
  * （低いトスは、手の高さでは円の手前にあるため）。
  */
-export function contactDist(s: GameState, p: Player, kind: ContactKind, t: number, b: Vec3, underhand = false): number {
-  const h = hitPoint(s, p, kind, t, underhand);
+export function contactDist(s: GameState, p: Player, kind: ContactKind, t: number, b: Vec3, underhand = false, lag = 0): number {
+  const h = hitPoint(s, p, kind, t + lag, underhand);
   if (kind === 'spike' && s.predLandTick >= 0 && dist2(h.x, h.z, s.predLandX, s.predLandZ) <= SPIKE_FRAME_RADIUS) {
     const prev = ballAt(s, t - 1);
     if (!prev || b.y <= prev.y) return Math.abs(b.y - h.y);
@@ -219,29 +219,35 @@ export function maxReachOf(kind: ContactKind, ballSpeed = 0): number {
  * 判定窓（±250ms）の中で最も近い時刻を探し、届く距離になければ MISS。
  * トスはオーバー（額の上）で上げる。オーバーの打点にボールが来たときに手が届く所にいれば、離すのが遅くてもオーバー（タイミングで判定）。
  * オーバーの打点に間に合っていなかったときだけ、アンダー（腰の高さ）で上げる（低いパスに、落ちる前に入れたとき）
+ *
+ * lag：オンラインのラグ補償。releaseTick はその人の画面に見えていたボールの tick で、選手の位置はそれより lag tick 先
+ * （自分の選手は先行表示しているため）。ボール tick t と選手 tick t+lag の組で比べる。ローカルでは 0
  */
-export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number): JudgeResult {
-  const r = judgeAt(s, p, kind, releaseTick, false);
-  if (kind !== 'toss' || couldOverhand(s, p, releaseTick)) return r;
-  const u = judgeAt(s, p, kind, releaseTick, true);
+export function judgeRelease(s: GameState, p: Player, kind: ContactKind, releaseTick: number, lag = 0): JudgeResult {
+  const r = judgeAt(s, p, kind, releaseTick, false, lag);
+  if (kind !== 'toss' || couldOverhand(s, p, releaseTick, lag)) return r;
+  const u = judgeAt(s, p, kind, releaseTick, true, lag);
   return u.tStar >= 0 ? { ...u, underhand: true } : r;
 }
+
+/** オーバーで上げられたかを、離した時刻からどれだけさかのぼって調べるか */
+const OVERHAND_LOOKBACK_TICKS = 30;
 
 /**
  * ボールがオーバーで触れる高さ（オーバーとアンダーの打点の中間より上）にある間に、手が届く所にいたか
  * （記録の残っている範囲と判定窓の先まで）
  */
-function couldOverhand(s: GameState, p: Player, releaseTick: number): boolean {
+function couldOverhand(s: GameState, p: Player, releaseTick: number, lag: number): boolean {
   const minY = (TOSS_HIT_HEIGHT + RECEIVE_HIT_HEIGHT) / 2;
-  for (let t = releaseTick - HISTORY_TICKS + 1; t <= releaseTick + JUDGE_WINDOW_TICKS + 1; t++) {
+  for (let t = releaseTick - OVERHAND_LOOKBACK_TICKS + 1; t <= releaseTick + JUDGE_WINDOW_TICKS + 1; t++) {
     if (s.landTick >= 0 && t >= s.landTick) break;
     const b = ballAt(s, t);
-    if (b && b.y >= minY && contactDist(s, p, 'toss', t, b, false) <= reachOf('toss')) return true;
+    if (b && b.y >= minY && contactDist(s, p, 'toss', t, b, false, lag) <= reachOf('toss')) return true;
   }
   return false;
 }
 
-function judgeAt(s: GameState, p: Player, kind: ContactKind, releaseTick: number, underhand: boolean): JudgeResult & { dist: number } {
+function judgeAt(s: GameState, p: Player, kind: ContactKind, releaseTick: number, underhand: boolean, lag: number): JudgeResult & { dist: number } {
   const W = JUDGE_WINDOW_TICKS;
   let best = Infinity;
   let bestT = -1;
@@ -252,7 +258,7 @@ function judgeAt(s: GameState, p: Player, kind: ContactKind, releaseTick: number
     if (s.landTick >= 0 && t >= s.landTick) break; // 跳ね返ったボールは打てない
     const b = ballAt(s, t);
     if (!b) continue;
-    const d = contactDist(s, p, kind, t, b, underhand);
+    const d = contactDist(s, p, kind, t, b, underhand, lag);
     if (d < best) {
       best = d;
       bestT = t;
@@ -364,7 +370,12 @@ function rewindContact(s: GameState, pc: PendingContact): void {
     // 打てなかった場合は元に戻す（予測からやり直す）
     computePath(s, pc.tick);
   }
-  for (let t = pc.tick; t < s.tick; t++) {
+  replayBall(s, pc.tick, s.tick);
+}
+
+/** ボールを tick from から to まで進め直し、その間の履歴を書き換える */
+function replayBall(s: GameState, from: number, to: number): void {
+  for (let t = from; t < to; t++) {
     advanceBall(s, t);
     const e = historyAt(s, t + 1);
     if (e) {
@@ -709,13 +720,22 @@ export function stepJumps(s: GameState): void {
   }
 }
 
-/** ブロックの手にボールが当たったか調べ、当たったら跳ね返す */
+/**
+ * ブロックの手にボールが当たったか調べ、当たったら跳ね返す（step の中で、ボールを1tick進めた後に呼ぶ）。
+ * オンラインで遅延のあるチーム（team.lag>0）は、その人の画面に見えていた lag tick 前のボールと今の手で比べ、
+ * 当たっていればその時点からボールを進め直す（ブロックのラグ補償）
+ */
 export function checkBlocks(s: GameState): void {
   if (s.blockedThisAttack || s.ball.mode !== 'flying' || s.lastTouchTeam < 0) return;
   if (s.lastContactKind === 'serve' || s.lastContactKind === 'block') return; // サーブはブロックできない
-  const b = s.ball.pos;
+  const now = s.tick + 1; // ボールはこの tick の位置まで進んでいる
   for (const p of s.players) {
     if (p.jump !== 'block' || p.team === s.lastTouchTeam) continue;
+    const lag = Math.min(s.teams[p.team].lag, MAX_REWIND_TICKS);
+    const h = lag > 0 ? historyAt(s, now - lag) : null;
+    // 打球より前・接地した後のボールには当てない
+    if (h && (h.mode !== 'flying' || h.grounded || (s.lastContact !== null && s.lastContact.tick > h.tick))) continue;
+    const b = h ? h.ball : s.ball.pos;
     const { lz: blz } = toLocal(p.team, b.x, b.z);
     // 手はネットの上から相手側に少し出る
     if (blz < -0.35 || blz > BLOCK_DEPTH) continue;
@@ -724,7 +744,21 @@ export function checkBlocks(s: GameState): void {
     // 手の上の方か左右の端に当たればワンタッチ、真ん中なら跳ね返す
     const top = b.y > p.y + BLOCK_HAND_TOP + BALL_RADIUS - BLOCK_TOUCH_TOP;
     const edge = Math.abs(b.x - p.x) > BLOCK_HALF_WIDTH + BALL_RADIUS - BLOCK_TOUCH_EDGE;
+    if (!h) {
+      applyBlock(s, p, top || edge);
+      return;
+    }
+    // 見えていた時点のボールに戻して当て、今まで進め直す
+    s.ball.pos = copy3(h.ball);
+    s.ball.vel = copy3(h.vel);
+    s.ball.mode = 'flying';
+    s.ball.grounded = false;
+    s.ball.drop = h.drop;
+    if (s.landTick > h.tick) s.landTick = -1;
     applyBlock(s, p, top || edge);
+    replayBall(s, h.tick, now);
+    computePath(s, now);
+    updateActors(s);
     return;
   }
 }

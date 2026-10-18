@@ -163,7 +163,10 @@ function goTitle(): void {
     practice: goPractice,
     online: () => {
       clearUI();
-      session = startOnline(ui, renderer, settings, goTitle);
+      session = startOnline(ui, renderer, settings, goTitle, (st) => {
+        settings = st;
+        saveSettings(st);
+      });
     },
     settings: () =>
       showSettings(ui, settings.rules, (rules) => {

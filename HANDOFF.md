@@ -9,6 +9,8 @@ gh repo clone xor04cb/desk-volley
 cd desk-volley
 npm install
 npm run dev      # http://localhost:5173 （同じWi-Fiのスマホは表示される Network のURL）
+npm run server   # オンライン対戦のサーバー（ポート8787）。dev の画面の /ws から中継される
+# 遅延の確認：FAKE_LAG_MS=150（往復）FAKE_JITTER_MS=15（片道のゆらぎ）を付けて起動。?debug で往復・表示tick・予測tickが出る
 npm test         # vitest
 npx tsc --noEmit # 型チェック
 ```
@@ -29,7 +31,9 @@ npx tsc --noEmit # 型チェック
 | 5 | 実装済み。落下予測円・自動切り替え・残りコンタクト表示を画面で確認（自動操作スクリプトで）。**人が遊んでの確認はまだ** |
 | 6 | 完了・画面で確認済み（5点・3セットに変えて試合終了画面まで） |
 | 7 | 不要になったため削除（同一端末2人対戦のコードも削除済み） |
-| 8〜10 | 未着手（`client/online.ts` は「準備中」の仮画面だけ） |
+| 8 | 実装済み。テスト（tests/online.test.ts）と、PCのブラウザ2つでの対戦で確認。**スマホ2台での確認はまだ** |
+| 9 | 実装済み。tests/lag.test.ts（遅延150msを模擬）で判定が遅延なしと同じになることを確認。PCのブラウザ2つ＋人工遅延でも動作確認。**人が遅延ありで遊んでの確認はまだ** |
+| 10 | 未着手（Cloudflare の一時トンネルで外から遊べることは確認済み） |
 
 ## 次にやること
 
@@ -50,7 +54,10 @@ shared/   ゲームロジック（描画・通信に依存しない）
   practice.ts   練習モード（1本ごとに状況を作り直す、自動トス）
   types.ts      状態の型、ルールの既定値
 client/   Three.js 描画（renderer.ts）、入力（input.ts）、HUD（hud.ts）、画面遷移（main.ts, menus.ts）
-server/   未着手
+  net.ts        オンラインのメッセージの形、送る状態（toSnapshot / fromSnapshot）、受け取った値の検査
+client/online.ts  オンライン対戦の画面（部屋を作る・参加、入力を送る、届いた状態を描く）
+client/netsync.ts 遅延対策（時刻合わせ・補間・自分の選手の予測）。DOMに触らないのでテストから使える
+server/   rooms.ts（部屋コード・60Hzの進行・30Hzの状態配信・dist の配信）、server.ts（起動）
 tests/    vitest（physics / game）と sim.ts
 ```
 
@@ -68,6 +75,16 @@ tests/    vitest（physics / game）と sim.ts
 - 速い打球はレシーブが難しくなる（届く距離が縮み、ぶれが増える）。CPUのアタッカーは空いている所を狙う。
   - これがないとCPU同士のラリーが終わらなかったため（調整前は1ラリー平均30回以上触っていた）
   - 調整後はスパイク決定率 約45%、25点1セットで約11分
+
+- オンライン（フェーズ8）：部屋を作った人がチーム0（手前）、参加した人がチーム1（カメラを反転）。ルールは作った人の設定。
+  入力（スティック・押した・離した）は届いた時点のサーバーの tick で扱う。状態は履歴・予測軌道・乱数を除いて JSON で30Hz配信し、
+  受け取った側で予測軌道だけ作り直す。1回約4.8KB（30Hzで1人あたり約140KB/秒）。まだ減らしていない
+- 遅延対策（フェーズ9、client/netsync.ts）：時間軸が2つある。
+  - 表示 tick R＝サーバーの今−片道−50ms。ボールと他の選手はここを補間して描く
+  - 予測 tick A＝サーバーの今＋片道。自分の操作選手の位置だけ、届いた状態から自分の入力を当てて先に進めて描く
+  - ボタンには R を付けて送る。サーバーは「ボールは R（履歴から巻き戻す）、選手は今、操作選手は R の時点」で動作と判定を決める
+    （`release(s, team, tick)` の tick が過去なら補償。`judgeRelease` の lag、`withBallAt`）。ブロックは team.lag だけ前のボールと今の手で当てる
+  - スティックは届いた時点で使う（予測と合う）。巻き戻しは最大 `MAX_REWIND_TICKS`（250ms）
 
 ## 注意
 

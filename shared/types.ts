@@ -89,6 +89,8 @@ export interface Team {
   mx: number;
   mf: number;
   human: boolean;
+  /** オンラインの遅延（tick）。この人の画面のボールは、サーバーよりこれだけ前の状態。ブロックのラグ補償に使う。ローカルでは 0 */
+  lag: number;
 }
 
 export interface PendingContact {
@@ -148,6 +150,8 @@ export interface HistoryEntry {
   drop: number;
   /** 各選手の (x, z, y) */
   players: number[];
+  /** 各チームの操作中の選手（オンラインのラグ補償で、画面に見えていた時点の操作選手を使う） */
+  controlled: [number, number];
 }
 
 export type Phase = 'serve' | 'rally' | 'point' | 'matchEnd';

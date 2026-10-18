@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { NET } from './shared/constants.ts';
 
 export default defineConfig({
   root: 'client',
@@ -6,6 +7,8 @@ export default defineConfig({
   server: {
     host: true, // 同じWi-Fiのスマホから開けるようにする
     port: 5173,
+    // オンライン対戦：npm run server へつなぐ。スマホも同じURL（5173）のままでよい
+    proxy: { [NET.path]: { target: `ws://localhost:${NET.port}`, ws: true } },
   },
   build: {
     outDir: '../dist',

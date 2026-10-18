@@ -161,10 +161,14 @@ export function showPauseMenu(
   ui: HTMLElement,
   s: GameState,
   settings: Settings,
-  h: { resume: () => void; retry: () => void; title: () => void; changed: (s: Settings) => void; practiceMenu?: () => void },
+  h: { resume: () => void; retry?: () => void; title: () => void; changed: (s: Settings) => void; practiceMenu?: () => void; online?: boolean },
 ): void {
   const p = panel(ui, 'pause');
-  p.innerHTML = s.practice ? `<h2>一時停止</h2><p class="sub">練習：${PRACTICE_LABEL[s.practice.kind]}</p>` : `<h2>一時停止</h2>${setTable(s)}`;
+  p.innerHTML = s.practice
+    ? `<h2>一時停止</h2><p class="sub">練習：${PRACTICE_LABEL[s.practice.kind]}</p>`
+    : h.online
+      ? `<h2>メニュー</h2><p class="sub">オンライン対戦中は試合が止まりません</p>${setTable(s)}`
+      : `<h2>一時停止</h2>${setTable(s)}`;
   const st = { ...settings };
   choice(p, '操作パッド', st.showPad, [[true, 'ON'], [false, 'OFF']], (v) => {
     st.showPad = v;
@@ -174,19 +178,20 @@ export function showPauseMenu(
     st.debug = v;
     h.changed({ ...st });
   });
-  button(p, '再開', () => {
+  button(p, h.online ? 'もどる' : '再開', () => {
     p.remove();
     h.resume();
   }, 'btn wide primary');
   if (h.practiceMenu) button(p, '練習を選ぶ', h.practiceMenu);
-  else button(p, 'リトライ', h.retry);
-  button(p, 'タイトルへ', h.title, 'btn wide ghost');
+  else if (h.retry) button(p, 'リトライ', h.retry);
+  button(p, h.online ? '退出してタイトルへ' : 'タイトルへ', h.title, 'btn wide ghost');
 }
 
-export function showMatchEnd(ui: HTMLElement, s: GameState, names: [string, string], h: { retry: () => void; title: () => void }): void {
+export function showMatchEnd(ui: HTMLElement, s: GameState, names: [string, string], h: { retry: () => void; title: () => void }): HTMLButtonElement {
   const p = panel(ui, 'end');
   const w = s.winner as 0 | 1;
   p.innerHTML = `<h2 class="t${w}">${names[w]} の勝ち</h2><p class="sub">${s.teams[0].setsWon} - ${s.teams[1].setsWon}</p>${setTable(s)}`;
-  button(p, 'もう一度', h.retry, 'btn wide primary');
+  const retry = button(p, 'もう一度', h.retry, 'btn wide primary');
   button(p, 'タイトルへ', h.title, 'btn wide ghost');
+  return retry;
 }
