@@ -1,7 +1,7 @@
 // 練習モード：試合のエンジンをそのまま使い、1本ごとに状況を作り直す。点数は数えない。
 // チーム0が人、チーム1がCPU（サーブを打つ・スパイクを打つなどの球出し役）。
 import { PRACTICE, RECEIVE_HIT_HEIGHT, SET_TARGET, TICK_RATE, TOSS_HIT_HEIGHT, TOSS_TARGET_LX, TOSS_TARGET_LZ } from './constants.ts';
-import { applyContact, ballAt, ballComingTo, computePath, contactDist, interceptPoint, opponentAttacking, reachOf, updateActors } from './actions.ts';
+import { applyContact, ballAt, ballComingTo, computePath, contactDist, directChance, interceptPoint, opponentAttacking, reachOf, updateActors } from './actions.ts';
 import type { Target } from './ai.ts';
 import { FORMATION, isFrontRow, playerAtPosition, positionOf, switchedPos, toWorld } from './court.ts';
 import { launch, solveByApex } from './physics.ts';
@@ -98,6 +98,21 @@ export function setupRep(s: GameState): void {
     const from = v3(passer.x, RECEIVE_HIT_HEIGHT, passer.z);
     launch(s.ball, from, solveByApex(from, st.x, st.z, PRACTICE.passApex));
     rallyFrom(s, 0, 'receive', 2, passer.id);
+  } else if (pr.kind === 'direct') {
+    // 相手の後衛のカットが長く、ネットを越えて自コートのネット際へ高く来たところから
+    placeTeam(s, 0, 'defense');
+    placeTeam(s, 1, 'receive');
+    const passer = playerAtPosition(s, 1, 6);
+    const between = (a: number, b: number) => a + (b - a) * rand(s.rng);
+    rallyFrom(s, 1, 'receive', 2, passer.id);
+    // 叩ける高さで下りてくるボールになるまで引き直す（ほぼ1回で決まる）
+    for (let i = 0; i < 8; i++) {
+      const from = v3(passer.x, RECEIVE_HIT_HEIGHT, passer.z);
+      const t = toWorld(0, between(-PRACTICE.directLxMax, PRACTICE.directLxMax), between(PRACTICE.directLzMin, PRACTICE.directLzMax));
+      launch(s.ball, from, solveByApex(from, t.x, t.z, between(PRACTICE.directApexMin, PRACTICE.directApexMax), PRACTICE.directPassHeight));
+      computePath(s);
+      if (directChance(s, 0)) break;
+    }
   }
   for (const p of s.players) {
     p.gx = p.x;
@@ -192,6 +207,8 @@ export function practicePostStep(s: GameState): boolean {
       const k = e.info.kind;
       if (pr.kind === 'serve') {
         if (k === 'serve') endRep(s, PRACTICE.afterServe);
+      } else if (pr.kind === 'direct') {
+        endRep(s, k === 'spike' || k === 'feint' ? PRACTICE.afterAttack : PRACTICE.afterTouch); // 叩いても、レシーブしても終わり
       } else if (pr.kind === 'serveCut' || pr.kind === 'spikeReceive') {
         endRep(s, PRACTICE.afterTouch); // カット・レシーブしたら終わり
       } else if (k === 'spike' || k === 'feint' || k === 'free') {

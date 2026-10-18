@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { contactDist, interceptPoint, riseTime } from '../shared/actions.ts';
+import { contactDist, directChance, interceptPoint, riseTime } from '../shared/actions.ts';
 import { JUMP_HEIGHT_MAX, PRACTICE, RECEIVE_HIT_HEIGHT, STANDING_REACH, TICK_RATE } from '../shared/constants.ts';
 import { createGame, currentAction, press, release, step } from '../shared/game.ts';
+import { isFrontRow, positionOf } from '../shared/court.ts';
 import type { ContactInfo, ContactKind, GameState, PracticeKind } from '../shared/types.ts';
 
 const practice = (kind: PracticeKind, seed = 3) => createGame({ seed, practice: { kind, tossZone: 'left' } });
@@ -145,5 +146,42 @@ describe('練習モード', () => {
     if (!c.some((x) => x.kind === 'receive')) return; // カットが乱れて届かない seed は対象外
     expect(c.some((x) => x.kind === 'toss' && x.team === 0)).toBe(true);
     expect(s.teams[0].controlled).toBe(s.practice!.attacker);
+  });
+
+  it('ダイレクト：相手の長いカットがネット際へ来て、前衛を操作する。何本続けても叩けるボールになる', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const s = practice('direct', seed);
+      for (let rep = 0; rep < 3; rep++) {
+        expect(directChance(s, 0)).not.toBeNull();
+        const p = s.players[s.teams[0].controlled];
+        expect(isFrontRow(positionOf(s, p))).toBe(true);
+        expect(currentAction(s, 0)).toBe('jump');
+        // 叩かなければ落ちて次の1本（点数は数えない）
+        while (startedNextRep(s)) step(s);
+        while (!startedNextRep(s)) step(s);
+        expect(s.teams[0].score + s.teams[1].score).toBe(0);
+      }
+    }
+  });
+
+  it('ダイレクト：跳んで叩いたら「ダイレクト」の判定が出て1本終わり', () => {
+    const s = practice('direct');
+    const h = STANDING_REACH + JUMP_HEIGHT_MAX;
+    goTo(s, h);
+    const ip = interceptPoint(s, 0, h)!;
+    hitAt(s, ip.tick - Math.round(riseTime(JUMP_HEIGHT_MAX) * TICK_RATE), 40);
+    expect(currentAction(s, 0)).toBe('spike');
+    const target = bestTick(s, 'spike');
+    run(s, Math.max(0, target - 18 - s.tick));
+    press(s, 0);
+    run(s, target - s.tick);
+    s.events.length = 0;
+    release(s, 0);
+    const judge = s.events.find((e) => e.type === 'judge');
+    expect(judge && judge.type === 'judge' && judge.direct).toBe(true);
+    run(s, 5);
+    expect(s.practice!.nextRepTick).toBeGreaterThan(0);
+    run(s, Math.round(PRACTICE.afterAttack * TICK_RATE) + 5);
+    expect(startedNextRep(s)).toBe(true);
   });
 });

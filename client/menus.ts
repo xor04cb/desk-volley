@@ -107,6 +107,7 @@ export const PRACTICE_LABEL: Record<PracticeKind, string> = {
   serveCutSpike: 'サーブカット→スパイク',
   spikeReceive: 'スパイクレシーブ',
   spike: 'スパイク',
+  direct: 'ダイレクト',
   serve: 'サーブ',
 };
 
@@ -115,6 +116,7 @@ const PRACTICE_HELP: Record<PracticeKind, string> = {
   serveCutSpike: 'カットすると味方がトスを上げる。跳んで打つ',
   spikeReceive: '相手のスパイク・フェイントを拾う',
   spike: '味方のトスを跳んで打つ',
+  direct: '相手の長いカットを、ネット際で跳んで叩く',
   serve: '自分のサーブを打ち続ける',
 };
 

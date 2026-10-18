@@ -212,6 +212,13 @@ export const PRACTICE = {
   passApex: 4.2, // スパイク練習でセッターへ返すパスの最高点
   tossApex: 5.0, // スパイクレシーブ練習で相手が上げるトスの最高点
   tossCharge: 0.6, // 自動トスの溜め量（最高点の高さが決まる）
+  // ダイレクト練習：相手のカットが長くネットを越え、自コートのネット際を叩ける高さで下りてくる 【要調整】
+  directApexMin: 4.2, // 相手のカットの最高点（この範囲でランダム）
+  directApexMax: 5.2,
+  directPassHeight: 3.0, // この高さを下りながら通る地点を狙う（DIRECT_MIN_HEIGHT〜DIRECT_HAND_HEIGHT の間）
+  directLzMin: 0.5, // その地点のネットからの距離（自コート側）
+  directLzMax: 1.2,
+  directLxMax: 3.0, // その地点の左右（中央から）
 };
 
 // ---- AI ----

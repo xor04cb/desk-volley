@@ -214,7 +214,7 @@ export interface GameState {
 }
 
 /** 練習の種類 */
-export type PracticeKind = 'serveCut' | 'serveCutSpike' | 'spikeReceive' | 'spike' | 'serve';
+export type PracticeKind = 'serveCut' | 'serveCutSpike' | 'spikeReceive' | 'spike' | 'direct' | 'serve';
 export type TossZone = 'left' | 'center' | 'right';
 
 export interface PracticeState {
