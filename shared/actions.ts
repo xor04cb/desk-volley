@@ -12,8 +12,11 @@ import {
   BLOCK_TOUCH_APEX_MAX,
   BLOCK_TOUCH_APEX_MIN,
   BLOCK_TOUCH_EDGE,
+  BLOCK_TOUCH_EDGE_PUSH_MAX,
+  BLOCK_TOUCH_EDGE_PUSH_MIN,
   BLOCK_TOUCH_LZ_MAX,
   BLOCK_TOUCH_LZ_MIN,
+  BLOCK_TOUCH_OUT_MAX,
   BLOCK_TOUCH_SPREAD,
   BLOCK_TOUCH_TOP,
   CHARGE_MAX,
@@ -29,6 +32,7 @@ import {
   FEINT_APEX_ABOVE_NET,
   FEINT_MAX_DIST,
   FRONT_RECEIVE_DEPTH,
+  FRONT_ZONE_SLACK,
   G,
   JUDGE_EFFECT,
   JUDGE_WINDOW_TICKS,
@@ -92,7 +96,7 @@ import {
   TOSS_TARGET_LX,
   TOSS_TARGET_LZ,
 } from './constants.ts';
-import { FORMATION, isFrontRow, judgeOf, positionOf, setterOf, switchedPos, toLocal, toWorld } from './court.ts';
+import { attackSide, FORMATION, isFrontRow, judgeOf, positionOf, setterOf, switchedPos, toLocal, toWorld } from './court.ts';
 import { launch, predict, sideOf, solveByApex, solveBySpeed, stepBall, type BallEvent } from './physics.ts';
 import { rand, randInCircle, randRange } from './prng.ts';
 import type { ActionKind, ContactInfo, ContactKind, GameState, Judgment, PendingContact, Player, TeamId } from './types.ts';
@@ -584,6 +588,7 @@ export function applyContact(s: GameState, pc: PendingContact, ballTick: number)
   s.antennaFault = false;
   s.landTick = -1;
   if (kind !== 'toss') s.tossTarget = -1;
+  if (kind === 'spike' || kind === 'feint' || kind === 'free') s.attackX = p.x;
   s.aiMissTick = [-1, -1];
   s.aiJumpTick = [-1, -1];
   s.aiReadyTick[opp] = ballTick + Math.round((AI.reactionDelay + (kind === 'spike' ? AI.spikeReactionExtra : 0)) * TICK_RATE);
@@ -744,8 +749,10 @@ export function checkBlocks(s: GameState): void {
     // 手の上の方か左右の端に当たればワンタッチ、真ん中なら跳ね返す
     const top = b.y > p.y + BLOCK_HAND_TOP + BALL_RADIUS - BLOCK_TOUCH_TOP;
     const edge = Math.abs(b.x - p.x) > BLOCK_HALF_WIDTH + BALL_RADIUS - BLOCK_TOUCH_EDGE;
+    // 手の端に当たったら、その手の外側（チームから見た左右）へはじく
+    const edgeDir = edge && !top ? Math.sign(toLocal(p.team, b.x - p.x, 0).lx) : 0;
     if (!h) {
-      applyBlock(s, p, top || edge);
+      applyBlock(s, p, top || edge, edgeDir);
       return;
     }
     // 見えていた時点のボールに戻して当て、今まで進め直す
@@ -755,7 +762,7 @@ export function checkBlocks(s: GameState): void {
     s.ball.grounded = false;
     s.ball.drop = h.drop;
     if (s.landTick > h.tick) s.landTick = -1;
-    applyBlock(s, p, top || edge);
+    applyBlock(s, p, top || edge, edgeDir);
     replayBall(s, h.tick, now);
     computePath(s, now);
     updateActors(s);
@@ -763,7 +770,7 @@ export function checkBlocks(s: GameState): void {
   }
 }
 
-function applyBlock(s: GameState, p: Player, touch: boolean): void {
+function applyBlock(s: GameState, p: Player, touch: boolean, edgeDir = 0): void {
   const v = s.ball.vel;
   const T = p.team;
   const attacker = (1 - T) as TeamId;
@@ -774,7 +781,8 @@ function applyBlock(s: GameState, p: Player, touch: boolean): void {
     const lv = toLocal(T, v.x, v.z);
     const lz = randRange(s.rng, BLOCK_TOUCH_LZ_MIN, BLOCK_TOUCH_LZ_MAX);
     const drift = lv.lz > 1 ? (lv.lx / lv.lz) * lz * 0.5 : 0;
-    const lx = clamp(l.lx + drift + randRange(s.rng, -BLOCK_TOUCH_SPREAD, BLOCK_TOUCH_SPREAD), -COURT_HALF_WIDTH - 1, COURT_HALF_WIDTH + 1);
+    const side = edgeDir !== 0 ? edgeDir * randRange(s.rng, BLOCK_TOUCH_EDGE_PUSH_MIN, BLOCK_TOUCH_EDGE_PUSH_MAX) : randRange(s.rng, -BLOCK_TOUCH_SPREAD, BLOCK_TOUCH_SPREAD);
+    const lx = clamp(l.lx + drift + side, -COURT_HALF_WIDTH - BLOCK_TOUCH_OUT_MAX, COURT_HALF_WIDTH + BLOCK_TOUCH_OUT_MAX);
     const t = toWorld(T, lx, lz);
     const apex = randRange(s.rng, BLOCK_TOUCH_APEX_MIN, BLOCK_TOUCH_APEX_MAX);
     const nv = solveByApex(b, t.x, t.z, apex);
@@ -857,6 +865,44 @@ export function nearestTo(s: GameState, team: TeamId, x: number, z: number, excl
     }
   }
   return best!;
+}
+
+/**
+ * 守備の担当ゾーンで、相手の攻撃（とブロックに当たったボール）を取る選手を決める（フロアディフェンス）。
+ * ・アタックラインまで（ネットから FRONT_RECEIVE_DEPTH 以内）で、ブロック（跳んだブロッカーの真ん中）よりコートの真ん中側に落ちるボールは、ブロックに跳んでいない前衛。
+ *   速い球は、後ろへ大きく下がらないと取れない前衛（RECEIVE_BACKSTEP_MAX）を除く
+ *   ただし後衛の方が FRONT_ZONE_SLACK 秒以上早く着けるとき（前衛が守備位置にいない）は後衛
+ * ・それ以外（奥、ブロックの後ろのストレート側の短いボール、取れる前衛がいない）は後衛のうち一番早く着ける選手。
+ *   後衛はブロックの影に合わせた守備位置（defenseHome）にいるので、その選手の担当ゾーンになる
+ */
+function zoneDefender(s: GameState, T: TeamId, x: number, z: number, exclude: number, fastBall: boolean): Player {
+  const ax = s.attackX;
+  const sg = attackSide(T, ax);
+  const L = toLocal(T, x, z);
+  if (L.lz <= FRONT_RECEIVE_DEPTH) {
+    // ブロックの後ろ（ストレート側）かどうか。だれもブロックに跳んでいなければ、全部真ん中側として扱う
+    const jumped = s.players.filter((q) => q.team === T && q.jump === 'block').map((q) => toLocal(T, q.x, q.z).lx);
+    const bc = jumped.length > 0 ? (Math.min(...jumped) + Math.max(...jumped)) / 2 : 0;
+    const centerSide = sg === 0 || jumped.length === 0 || sg * L.lx < sg * bc;
+    if (centerSide) {
+      let best: Player | null = null;
+      let bt = Infinity;
+      for (const q of s.players) {
+        if (q.team !== T || q.id === exclude || !isFrontRow(positionOf(s, q)) || q.jump === 'block') continue;
+        if (fastBall && L.lz - toLocal(T, q.x, q.z).lz > RECEIVE_BACKSTEP_MAX) continue;
+        const t = fastBall ? receiveTime(q, x, z) : travelTime(q, x, z);
+        if (t < bt) {
+          bt = t;
+          best = q;
+        }
+      }
+      const back = fastestTo(s, T, x, z, exclude, 'back', false, fastBall);
+      const bt2 = fastBall ? receiveTime(back, x, z) : travelTime(back, x, z);
+      if (best && bt <= bt2 + FRONT_ZONE_SLACK) return best;
+      return back;
+    }
+  }
+  return fastestTo(s, T, x, z, exclude, 'back', false, fastBall);
 }
 
 /**
@@ -975,7 +1021,13 @@ export function updateActors(s: GameState): void {
         if (direct) team.controlled = fastestTo(s, T, direct.x, direct.z, -1, 'front').id;
         else if (ip) {
           const pick = (ex: number) => (nearest ? nearestTo(s, T, ip.x, ip.z, ex) : fastestTo(s, T, ip.x, ip.z, ex, row, skipBlockers, fastBall));
-          let chosen = pick(exclude);
+          // ・相手の攻撃（スパイク・フェイント・返球）と自チームのブロックに当たったボールは、守備の担当ゾーンで決める（zoneDefender）
+          const k = s.lastContactKind;
+          const zoned =
+            team.contactsLeft === 3 &&
+            s.rules.system !== 'none' &&
+            ((s.lastTouchTeam !== T && (k === 'spike' || k === 'feint' || k === 'free')) || (s.lastTouchTeam === T && k === 'block'));
+          let chosen = zoned ? zoneDefender(s, T, ip.x, ip.z, exclude, fastBall) : pick(exclude);
           // ・ただしセッターの目の前に来たボール（セッターがほかの選手より SETTER_FIRST_BALL_MARGIN 秒以上早く着ける）はセッターが取る
           const setter = setterOf(s, T);
           if (setter && exclude === setter.id && pick(-1).id === setter.id) {

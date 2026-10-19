@@ -1,5 +1,15 @@
 // コート上の座標変換・フォーメーション
-import { COURT_HALF_LENGTH, COURT_HALF_WIDTH, EARLY_GRACE, JUDGE, JUDGE_SCALE, PLAYER_MIN_NET_DIST, SERVE_BEHIND_END } from './constants.ts';
+import {
+  BLOCK_HALF_WIDTH,
+  COURT_HALF_LENGTH,
+  COURT_HALF_WIDTH,
+  DEFENSE_SHADOW_DIST,
+  EARLY_GRACE,
+  JUDGE,
+  JUDGE_SCALE,
+  PLAYER_MIN_NET_DIST,
+  SERVE_BEHIND_END,
+} from './constants.ts';
 import type { ContactKind, DefenseFormation, GameState, Judgment, Player, ReceiveFormation, Role, RotationSystem, TeamId } from './types.ts';
 
 /** チームから見た座標（lx=右+、lz=ネットからの距離）→ ワールド座標 */
@@ -112,6 +122,67 @@ export const DEFENSE_SPOTS: Record<DefenseFormation, { side: Record<number, Spot
 };
 /** スパイカーの後ろのカバー（スパイカーの打点からの相対位置。近い3人と遠い2人） */
 export const COVER_SPOTS: Spot[] = [[-1.3, 1.6], [0, 2.1], [1.3, 1.6], [-2.6, 4.6], [2.6, 4.6]];
+
+/** 相手の攻撃が来る側（チームから見て）。1=右、-1=左、0=センター。ax は打つ位置（ワールドの x） */
+export function attackSide(T: TeamId, ax: number): -1 | 0 | 1 {
+  const alx = toLocal(T, ax, 0).lx;
+  return alx > 1.5 ? 1 : alx < -1.5 ? -1 : 0;
+}
+
+/** 守備の表（DEFENSE_SPOTS）での位置（チームから見た lx, lz）。null はブロックに入る選手 */
+export function defenseTableSpot(s: GameState, p: Player, ax: number): Spot | null {
+  const sg = attackSide(p.team, ax);
+  const table = DEFENSE_SPOTS[s.rules.defense][sg === 0 ? 'center' : 'side'];
+  // 左から来るときは、右から来るときの位置を左右反転して使う（ポジション 2↔4、1↔5）
+  const pos = switchedPos(s, p);
+  const mirrored = sg < 0 ? ({ 2: 4, 4: 2, 1: 5, 5: 1 } as Record<number, number>)[pos] ?? pos : pos;
+  const sp = table[mirrored];
+  if (sp === undefined || sp === null) return null;
+  return [sg < 0 ? -sp[0] : sp[0], sp[1]];
+}
+
+/**
+ * ブロックの影（相手の打点から見てブロックの手に隠れる範囲）の、深さ lz での左右の端（チームから見た lx）。
+ * 跳んでいるブロッカー、まだ跳んでいなければブロックに入る選手の位置から作る。ブロッカーがいなければ null
+ */
+export function blockShadow(s: GameState, T: TeamId, ax: number, lz: number): { lo: number; hi: number } | null {
+  const front = s.players.filter((p) => p.team === T && isFrontRow(switchedPos(s, p)));
+  let blockers = front.filter((p) => p.jump === 'block');
+  if (blockers.length === 0) blockers = front.filter((p) => defenseTableSpot(s, p, ax) === null);
+  if (blockers.length === 0) return null;
+  const xs = blockers.map((p) => toLocal(T, p.x, p.z).lx);
+  const e0 = Math.min(...xs) - BLOCK_HALF_WIDTH;
+  const e1 = Math.max(...xs) + BLOCK_HALF_WIDTH;
+  const hx = toLocal(T, ax, 0).lx;
+  const k = lz / DEFENSE_SHADOW_DIST;
+  return { lo: e0 + (e0 - hx) * k, hi: e1 + (e1 - hx) * k };
+}
+
+/**
+ * 相手が攻撃してくるときの守備位置（ワールド座標）。ax は相手が打つ位置（ワールドの x）。
+ * 表（DEFENSE_SPOTS）の位置を基に、サイドからの攻撃では奥の後衛をブロックの影の外へ動かす：
+ * 攻撃側の後衛はストレートの通り道（影とサイドラインの間）、反対側の後衛はクロスの通り道の真ん中
+ */
+export function defenseHome(s: GameState, p: Player, ax: number): { x: number; z: number } {
+  const T = p.team;
+  const sg = attackSide(T, ax);
+  const alx = toLocal(T, ax, 0).lx;
+  const sp = defenseTableSpot(s, p, ax);
+  if (sp === null) {
+    // ブロックに入る：攻撃側の前衛は打点の正面、センターはその内側に並ぶ
+    const bx = Math.max(-4.2, Math.min(4.2, alx - (switchedPos(s, p) === 3 && sg !== 0 ? sg * 0.8 : 0)));
+    return toWorld(T, bx, PLAYER_MIN_NET_DIST + 0.25);
+  }
+  let [lx, lz] = sp;
+  const sh = sg !== 0 && lz >= 4.5 ? blockShadow(s, T, ax, lz) : null;
+  if (sh) {
+    const W = COURT_HALF_WIDTH - 0.5;
+    const clampW = (v: number) => Math.max(-W, Math.min(W, v));
+    if (sg * lx > 1.5) lx = (clampW(sg > 0 ? sh.hi : sh.lo) + sg * W) / 2;
+    else if (sg * lx < -1.5) lx = (clampW(sg > 0 ? sh.lo : sh.hi) - sg * W) / 2;
+  }
+  return toWorld(T, lx, lz);
+}
 
 export function serveSpot(team: TeamId, lx = 2.5): { x: number; z: number } {
   return toWorld(team, lx, COURT_HALF_LENGTH + SERVE_BEHIND_END);

@@ -198,6 +198,8 @@ export interface GameState {
   blockedThisAttack: boolean;
   /** トスを上げた先のアタッカー（-1=なし） */
   tossTarget: number;
+  /** 最後の攻撃（スパイク・フェイント・返球）を打った位置（ワールドの x）。守備の担当ゾーンを決めるのに使う */
+  attackX: number;
   winner: TeamId | -1;
   /** セットが終わり、次のサーブ開始時に得点をリセットする */
   setPending: boolean;

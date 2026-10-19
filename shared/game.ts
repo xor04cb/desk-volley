@@ -144,6 +144,7 @@ export function createGame(opts: GameOptions = {}): GameState {
     aiMissTick: [-1, -1],
     blockedThisAttack: false,
     tossTarget: -1,
+    attackX: 0,
     winner: -1,
     setPending: false,
     aiServeTick: 0,

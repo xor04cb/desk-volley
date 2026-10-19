@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { aimPoint, applyContact, ballComingTo, blockerFor, directChance, opponentAttacking, serveHitTick, tossPoint, ballAt, contactDist, hitPoint, interceptPoint, riseTime, startJump, tossAimTarget, updateActors } from '../shared/actions.ts';
 import {
   BLOCK_JUMP_MAX,
+  BLOCK_TOUCH_LZ_MAX,
+  BLOCK_TOUCH_LZ_MIN,
+  COURT_HALF_LENGTH,
+  COURT_HALF_WIDTH,
   JUMP_HEIGHT_MIN,
   RECEIVE_HIT_HEIGHT,
   RECEIVE_RECOVER_TICKS,
@@ -14,7 +18,7 @@ import {
   TOSS_HIT_HEIGHT,
   TOSS_TARGET_LZ,
 } from '../shared/constants.ts';
-import { FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, roleOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
+import { blockShadow, defenseHome, FORMATION, isFrontRow, judgeOf, playerAtPosition, positionOf, roleOf, setterOf, switchedPos, toWorld } from '../shared/court.ts';
 import { formationSpot } from '../shared/ai.ts';
 import { createGame, currentAction, press, release, setStick, step, timeToContact } from '../shared/game.ts';
 import { launch, solveByApex } from '../shared/physics.ts';
@@ -37,6 +41,7 @@ function incoming(s: GameState, id: number, opts: { contactsLeft?: number; lastT
   s.aiReadyTick = [s.tick + 100000, s.tick + 100000];
   const from = opts.lastTouch === 0 ? v3(p.x + 1, 1, p.z + 2) : v3(p.x, 3, -5);
   launch(s.ball, from, solveByApex(from, p.x, p.z, opts.apex ?? 5));
+  s.attackX = from.x;
   computePath(s);
 }
 
@@ -606,9 +611,9 @@ describe('レシーブの担当', () => {
     updateActors(s);
     expect(s.teams[0].controlled).toBe(back.id);
   });
-  it('スパイクは、アタックラインより奥でも前衛が下がらずに取れるなら前衛が取る', () => {
-    const { s, front } = setup(4.5); // 前衛が打点にいる
-    expect(s.teams[0].controlled).toBe(front.id);
+  it('スパイクも、アタックラインより奥は前衛が近くても後衛が取る（守備の担当ゾーン）', () => {
+    const { s, back } = setup(4.5); // 前衛が打点にいる
+    expect(s.teams[0].controlled).toBe(back.id);
   });
   it('前のボールは近い前衛がレシーブする', () => {
     const { s, front } = setup(2);
@@ -632,16 +637,20 @@ describe('レシーブの担当', () => {
     updateActors(s);
     return { s, back, front };
   };
-  it('自チームのブロック後に手前に落ちるボール：後衛の方が近ければ後衛が取る', () => {
-    const { s, back } = nearNet(true, [1.8, 1.5], [0.5, 2.3]);
-    expect(s.teams[0].controlled).toBe(back.id);
-  });
-  it('自チームのブロック後に手前に落ちるボール：まだ空中のブロッカーでも、一番近ければ取る', () => {
-    const { s, front } = nearNet(true, [1.0, 1.5], [0, 3.0], true);
+  it('自チームのブロック後に手前の真ん中側へ落ちるボール：後衛の方が少し近くても、跳んでいない前衛が取る', () => {
+    const { s, front } = nearNet(true, [1.8, 1.5], [0.5, 2.3]);
     expect(s.teams[0].controlled).toBe(front.id);
   });
-  it('相手から来た手前のボールは、今までどおり一番早く着ける選手（空中の選手は着地を待つ分遅い）', () => {
-    const { s, back } = nearNet(false, [1.0, 1.5], [0, 3.0], true);
+  it('自チームのブロック後に手前に落ちるボール：ブロックに跳んだ前衛は取りに行かない', () => {
+    const { s, front } = nearNet(true, [1.0, 1.5], [0, 3.0], true);
+    front.jump = 'block';
+    updateActors(s);
+    expect(s.teams[0].controlled).not.toBe(front.id);
+  });
+  it('手前のボールでも、前衛が守備位置から遠く後衛の方がずっと早く着けるなら後衛が取る', () => {
+    const { s, back } = nearNet(false, [4.0, 6.0], [0, 2.5]);
+    for (const pos of [2, 4]) [playerAtPosition(s, 0, pos).x, playerAtPosition(s, 0, pos).z] = [pos === 2 ? 4.4 : -4.4, 7];
+    updateActors(s);
     expect(s.teams[0].controlled).toBe(back.id);
   });
   it('アタックラインより前に落ちるフェイントは前衛が取る', () => {
@@ -695,6 +704,7 @@ describe('レシーブの担当', () => {
     s.lastTouchTeam = 1;
     s.lastContactKind = 'feint';
     s.lastContact = { team: 1, player: atk.id, kind: 'feint' } as ContactInfo;
+    s.attackX = atkX;
     s.teams[0].contactsLeft = 3;
     computePath(s);
     updateActors(s);
@@ -732,6 +742,7 @@ describe('レシーブの担当', () => {
     s.lastTouchTeam = 1;
     s.lastContactKind = kind;
     s.lastContact = { team: 1, player: playerAtPosition(s, 1, 4).id, kind } as ContactInfo;
+    s.attackX = from.x;
     s.teams[0].contactsLeft = 3;
     computePath(s);
     updateActors(s);
@@ -1159,5 +1170,102 @@ describe('2枚ブロック', () => {
       }
     }
     expect(doubles).toBeGreaterThan(0);
+  });
+});
+
+describe('フロアディフェンス', () => {
+  /** 相手のライト（自コートの左、lx=-3）からの攻撃。自チームのブロッカー2人を blockLx に置く */
+  const leftAttack = (blockLx: [number, number]) => {
+    const s = createGame({ seed: 2 });
+    for (const p of s.players) {
+      const [lx, lz] = (p.team === 0 ? FORMATION.defense : FORMATION.offense)[switchedPos(s, p)];
+      const w = toWorld(p.team, lx, lz);
+      p.x = w.x;
+      p.z = w.z;
+    }
+    const ax = toWorld(0, -3, 0).x;
+    const blockers = s.players.filter((p) => p.team === 0 && isFrontRow(switchedPos(s, p)) && switchedPos(s, p) !== 2);
+    blockers.sort((a, b) => a.x - b.x).forEach((p, i) => {
+      p.x = blockLx[i];
+      p.z = 0.6;
+    });
+    const byPos = (pos: number) => s.players.find((p) => p.team === 0 && switchedPos(s, p) === pos)!;
+    return { s, ax, byPos };
+  };
+
+  it('後衛はブロックの影の外に立つ：ストレート側はブロックとサイドラインの間、クロス側はクロスの通り道', () => {
+    const { s, ax, byPos } = leftAttack([-3.3, -2.4]);
+    const line = defenseHome(s, byPos(5), ax); // 攻撃側（左）の後衛
+    const cross = defenseHome(s, byPos(1), ax);
+    const shL = blockShadow(s, 0, ax, line.z)!;
+    // 影の外（サイドライン側）。影がサイドラインまで覆うときはサイドライン際
+    expect(line.x).toBeLessThanOrEqual(Math.max(shL.lo, -COURT_HALF_WIDTH + 0.5) + 1e-9);
+    expect(line.x).toBeGreaterThanOrEqual(-COURT_HALF_WIDTH);
+    const shC = blockShadow(s, 0, ax, cross.z)!;
+    expect(cross.x).toBeGreaterThanOrEqual(Math.min(shC.hi, COURT_HALF_WIDTH - 0.5) - 1e-9); // 影の外（クロス側）
+    expect(cross.x).toBeLessThanOrEqual(COURT_HALF_WIDTH);
+  });
+
+  it('ブロックが内側にずれてストレートが空くと、ストレート側の後衛も内へ寄る', () => {
+    const good = leftAttack([-3.3, -2.4]);
+    const bad = leftAttack([-1.6, -0.7]);
+    const x = (o: typeof good) => defenseHome(o.s, o.byPos(5), o.ax).x;
+    expect(x(bad)).toBeGreaterThan(x(good));
+  });
+
+  /** leftAttack で2人がブロックに跳んだ後、相手のスパイクが自コートの (lx, lz) へ来る */
+  const shortBall = (lx: number, lz: number) => {
+    const o = leftAttack([-3.3, -2.4]);
+    const { s } = o;
+    for (const p of s.players) if (p.team === 0 && p.z === 0.6) {
+      p.jump = 'block';
+      p.y = 0.8;
+    }
+    const from = v3(o.ax, 3.2, -0.5);
+    launch(s.ball, from, solveByApex(from, lx, lz, 3.3));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'feint';
+    s.attackX = o.ax;
+    s.teams[0].contactsLeft = 3;
+    computePath(s);
+    updateActors(s);
+    return { ...o, c: s.players[s.teams[0].controlled] };
+  };
+
+  it('アタックラインまでの、ブロックより真ん中側のボールはブロックに跳んでいない前衛が取る', () => {
+    const { s, c } = shortBall(-0.5, 2.2);
+    expect(isFrontRow(switchedPos(s, c))).toBe(true);
+    expect(c.jump).toBe('none');
+  });
+
+  it('ブロックの後ろ（ストレート側）の短いボールは後衛が取る', () => {
+    const { s, c } = shortBall(-3.8, 2.2);
+    expect(isFrontRow(switchedPos(s, c))).toBe(false);
+  });
+
+  it('ワンタッチはネット際からコートの外まで落ちる', () => {
+    const lzs: number[] = [];
+    const outs = { side: 0, end: 0 };
+    for (const seed of [1, 2, 3, 4]) {
+      const s = createGame({ seed, humans: [false, false] });
+      for (let i = 0; i < 60 * 60 * 8 && s.phase !== 'matchEnd'; i++) {
+        step(s);
+        const b = s.events.find((e) => e.type === 'block');
+        if (!b || b.type !== 'block' || !b.touch || s.predLandTick < 0) continue;
+        const T = s.players[b.player].team;
+        const l = T === 0 ? { lx: s.predLandX, lz: s.predLandZ } : { lx: -s.predLandX, lz: -s.predLandZ };
+        lzs.push(l.lz);
+        if (Math.abs(l.lx) > COURT_HALF_WIDTH) outs.side++;
+        if (l.lz > COURT_HALF_LENGTH) outs.end++;
+      }
+    }
+    expect(lzs.length).toBeGreaterThan(20);
+    expect(Math.min(...lzs)).toBeLessThan(2.5);
+    expect(Math.min(...lzs)).toBeGreaterThan(BLOCK_TOUCH_LZ_MIN - 0.8);
+    expect(Math.max(...lzs)).toBeLessThan(BLOCK_TOUCH_LZ_MAX + 0.8);
+    expect(outs.end).toBeGreaterThan(0);
+    expect(outs.side).toBeGreaterThan(0);
   });
 });

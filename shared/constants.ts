@@ -147,9 +147,12 @@ export const BLOCK_TOUCH_TOP = 0.32; // 手の上端からこの範囲に当た�
 export const BLOCK_TOUCH_EDGE = 0.25; // 手の左右の端からこの範囲に当たるとワンタッチ(m)
 export const BLOCK_TOUCH_APEX_MIN = 3.4; // ワンタッチで上がるボールの最高点
 export const BLOCK_TOUCH_APEX_MAX = 4.4;
-export const BLOCK_TOUCH_LZ_MIN = 3; // 落ちる深さ（ブロック側のネットから）
-export const BLOCK_TOUCH_LZ_MAX = 8;
-export const BLOCK_TOUCH_SPREAD = 1.5; // 左右のぶれ(m)。サイドライン近くではコートの外へ出ることもある
+export const BLOCK_TOUCH_LZ_MIN = 1.5; // 落ちる深さ（ブロック側のネットから）
+export const BLOCK_TOUCH_LZ_MAX = 11; // エンドライン（9m）の外まで。追いかけて拾うワンタッチ
+export const BLOCK_TOUCH_SPREAD = 2.0; // 左右のぶれ(m)。サイドラインの外へ出ることもある
+export const BLOCK_TOUCH_EDGE_PUSH_MIN = 1.0; // 手の端に当たったワンタッチは、その手の外側へこの範囲ではじく(m)
+export const BLOCK_TOUCH_EDGE_PUSH_MAX = 4.0;
+export const BLOCK_TOUCH_OUT_MAX = 2.0; // サイドラインの外へ落ちるのは、この距離まで(m)
 
 // ---- フライング（届かないボールに飛び込むレシーブ） ----
 export const DIVE_REACH = 1.4; // 普通に届く距離より、さらにこれだけ遠くまで届く(m) 【要調整】
@@ -164,6 +167,9 @@ export const DIVE_FRAME_RADIUS = LANDING_MARK_RADIUS + 0.25;
 // ---- レシーブの担当 ----
 /** 相手からのボールがネットからこの距離より奥に落ちるときは、後衛がレシーブする 【要調整】 */
 export const FRONT_RECEIVE_DEPTH = ATTACK_LINE;
+// 守備（フロアディフェンス）【要調整】
+export const FRONT_ZONE_SLACK = 0.4; // 前衛の担当の短いボールでも、後衛の方がこの秒数以上早く着けるときは後衛が取る（前衛が守備位置にいないとき）
+export const DEFENSE_SHADOW_DIST = 3; // ブロックの影を作る打点の、ネットからの距離(m)。大きいほど影が細い（打球はブロックの上を越えて奥へも行くため、実際より遠くに置く）
 
 // 相手のサーブ・スパイク（速い球）を取る選手は、着くまでの時間で選ぶ。後ろ（エンドライン側）へ下がるのは前や横より遅いとして数える 【要調整】
 export const RECEIVE_BACKSTEP_MAX = 1.0; // 打点がこれ以上後ろにある選手（大きく下がらないと取れない選手）は候補から外す(m)

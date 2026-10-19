@@ -35,11 +35,13 @@ import {
 } from './actions.ts';
 import {
   COVER_SPOTS,
-  DEFENSE_SPOTS,
   FORMATION,
   RECEIVE_HIDDEN,
   RECEIVE_SPOTS,
   SETTER_SPOT,
+  attackSide,
+  defenseHome,
+  defenseTableSpot,
   isFrontRow,
   judgeOf,
   positionOf,
@@ -88,7 +90,7 @@ export function formationSpot(s: GameState, p: Player): Target {
     return at(FORMATION.offense[pos]);
   }
   if (!opponentAttacking(s, T)) return at(FORMATION.defense[pos]);
-  return defenseSpot(s, p, pos);
+  return defenseSpot(s, p);
 }
 
 /** ローテシステム「なし」：役割なし、ローテーションの位置のまま（陣形を入れる前の動き） */
@@ -136,21 +138,8 @@ function receiveSpot(s: GameState, p: Player): Spot {
 }
 
 /** 相手が攻撃してくるときの守備位置。攻撃の来る側（自コートの左右）に合わせて反転する */
-function defenseSpot(s: GameState, p: Player, pos: number): Target {
-  const T = p.team;
-  const ax = attackX(s, T);
-  const alx = toLocal(T, ax, 0).lx;
-  const sg = alx > 1.5 ? 1 : alx < -1.5 ? -1 : 0;
-  const table = DEFENSE_SPOTS[s.rules.defense][sg === 0 ? 'center' : 'side'];
-  // 左から来るときは、右から来るときの位置を左右反転して使う（ポジション 2↔4、1↔5）
-  const mirrored = sg < 0 ? ({ 2: 4, 4: 2, 1: 5, 5: 1 } as Record<number, number>)[pos] ?? pos : pos;
-  const sp = table[mirrored];
-  if (sp === undefined || sp === null) {
-    // ブロックに入る：攻撃側の前衛は打点の正面、センターはその内側に並ぶ
-    const bx = clamp(alx - (pos === 3 && sg !== 0 ? sg * 0.8 : 0), -4.2, 4.2);
-    return toWorld(T, bx, PLAYER_MIN_NET_DIST + 0.25);
-  }
-  return toWorld(T, sg < 0 ? -sp[0] : sp[0], sp[1]);
+function defenseSpot(s: GameState, p: Player): Target {
+  return defenseHome(s, p, attackX(s, p.team));
 }
 
 /**
@@ -160,18 +149,13 @@ function defenseSpot(s: GameState, p: Player, pos: number): Target {
 export function blockPartner(s: GameState, main: Player): Player | null {
   const T = main.team;
   if (s.rules.system === 'none' || !opponentAttacking(s, T)) return null;
-  const alx = toLocal(T, attackX(s, T), 0).lx;
-  const sg = alx > 1.5 ? 1 : alx < -1.5 ? -1 : 0;
-  if (sg === 0) return null;
-  const table = DEFENSE_SPOTS[s.rules.defense].side;
+  const ax = attackX(s, T);
+  if (attackSide(T, ax) === 0) return null;
   let best: Player | null = null;
   let bd = BLOCK_PARTNER_MAX_GAP;
   for (const q of s.players) {
     if (q.team !== T || q.id === main.id || q.jump !== 'none' || q.y > 0 || q.diveTick >= 0) continue;
-    const pos = switchedPos(s, q);
-    if (!isFrontRow(pos)) continue;
-    const mirrored = sg < 0 ? ({ 2: 4, 4: 2 } as Record<number, number>)[pos] ?? pos : pos;
-    if (table[mirrored] !== null) continue;
+    if (!isFrontRow(switchedPos(s, q)) || defenseTableSpot(s, q, ax) !== null) continue;
     const d = Math.abs(q.x - main.x);
     if (d <= bd) {
       bd = d;
