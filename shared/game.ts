@@ -47,7 +47,7 @@ import {
   tossAimTarget,
   updateActors,
 } from './actions.ts';
-import { formationSpot, moveToward, runAI, type Target } from './ai.ts';
+import { blockPartner, formationSpot, moveToward, runAI, type Target } from './ai.ts';
 import { clampToSide, isFrontRow, playerAtPosition, positionOf, serveSpot, toLocal, toWorld } from './court.ts';
 import { makeBall, sideOf } from './physics.ts';
 import {
@@ -254,9 +254,12 @@ export function release(s: GameState, team: TeamId, tick = s.tick): void {
     case 'twoJump':
       startJump(s, p, 'attack', charge);
       return;
-    case 'block':
+    case 'block': {
       startJump(s, p, 'block', charge);
+      const partner = blockPartner(s, p);
+      if (partner) startJump(s, partner, 'block', charge); // 2枚ブロック：相方（CPU）も同じ高さで同時に跳ぶ
       return;
+    }
     case 'serve':
     case 'receive':
     case 'toss':

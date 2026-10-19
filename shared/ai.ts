@@ -3,6 +3,7 @@ import {
   AI,
   BLOCK_JUMP_MAX,
   BLOCK_JUMP_MIN,
+  BLOCK_PARTNER_MAX_GAP,
   JUMP_HEIGHT_MAX,
   JUMP_HEIGHT_MIN,
   PLAYER_MIN_NET_DIST,
@@ -152,6 +153,34 @@ function defenseSpot(s: GameState, p: Player, pos: number): Target {
   return toWorld(T, sg < 0 ? -sp[0] : sp[0], sp[1]);
 }
 
+/**
+ * 2枚ブロックの相方：サイドからの攻撃で、守備の陣形でブロックに入る（DEFENSE_SPOTS が null の）もう1人の前衛。
+ * main のそばにいて、まだ跳んでいないときだけ。センターからの攻撃と、ローテシステム「なし」では1枚なので null
+ */
+export function blockPartner(s: GameState, main: Player): Player | null {
+  const T = main.team;
+  if (s.rules.system === 'none' || !opponentAttacking(s, T)) return null;
+  const alx = toLocal(T, attackX(s, T), 0).lx;
+  const sg = alx > 1.5 ? 1 : alx < -1.5 ? -1 : 0;
+  if (sg === 0) return null;
+  const table = DEFENSE_SPOTS[s.rules.defense].side;
+  let best: Player | null = null;
+  let bd = BLOCK_PARTNER_MAX_GAP;
+  for (const q of s.players) {
+    if (q.team !== T || q.id === main.id || q.jump !== 'none' || q.y > 0 || q.diveTick >= 0) continue;
+    const pos = switchedPos(s, q);
+    if (!isFrontRow(pos)) continue;
+    const mirrored = sg < 0 ? ({ 2: 4, 4: 2 } as Record<number, number>)[pos] ?? pos : pos;
+    if (table[mirrored] !== null) continue;
+    const d = Math.abs(q.x - main.x);
+    if (d <= bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  return best;
+}
+
 /** 相手が打ってくる位置（ワールドの x）。トスの相手がいればその選手、なければ落下予測 */
 function attackX(s: GameState, T: TeamId): number {
   const opp = 1 - T;
@@ -277,6 +306,8 @@ export function runAI(s: GameState, T: TeamId): Target | null {
     }
     if (s.aiJumpTick[T] >= 0 && s.tick >= s.aiJumpTick[T] && b.y === 0 && b.jump === 'none') {
       startJump(s, b, 'block', AI_BLOCK_CHARGE);
+      const partner = blockPartner(s, b);
+      if (partner) startJump(s, partner, 'block', AI_BLOCK_CHARGE); // 2枚ブロック：相方も一緒に跳ぶ
       s.aiJumpTick[T] = Number.MAX_SAFE_INTEGER; // 1回だけ
     }
     return { x: clamp(spot.x, -4.3, 4.3), z: spot.z };

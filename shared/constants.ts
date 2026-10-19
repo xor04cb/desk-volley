@@ -141,6 +141,7 @@ export const BLOCK_HAND_TOP = 2.55; // 足元からの高さ（手の上端）
 export const BLOCK_HALF_WIDTH = 0.45;
 export const BLOCK_DEPTH = 0.45; // ネットから手が出る奥行き
 export const BLOCK_RESTITUTION = 0.45;
+export const BLOCK_PARTNER_MAX_GAP = 2.0; // 2枚ブロック：ブロッカーからこの左右の距離にいる相方が一緒に跳ぶ(m) 【要調整】
 // ワンタッチ：手の上の方・左右の端に当たると勢いが死に、ブロック側のコートへ拾いやすいボールが上がる 【要調整】
 export const BLOCK_TOUCH_TOP = 0.32; // 手の上端からこの範囲に当たるとワンタッチ(m)
 export const BLOCK_TOUCH_EDGE = 0.25; // 手の左右の端からこの範囲に当たるとワンタッチ(m)

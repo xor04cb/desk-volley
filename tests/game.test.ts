@@ -1101,3 +1101,63 @@ describe('試合の進行', () => {
   });
 });
 
+describe('2枚ブロック', () => {
+  /** 相手の前衛（pos）へトスが上がったところで、人がブロックに跳ぶ。同じ tick に跳んだ自チームの選手を返す */
+  const blockAgainst = (pos: number): number[] => {
+    const s = createGame({ seed: 2, rules: { feint: false } });
+    for (const p of s.players) {
+      const [lx, lz] = (p.team === 0 ? FORMATION.defense : FORMATION.offense)[switchedPos(s, p)];
+      const w = toWorld(p.team, lx, lz);
+      p.x = w.x;
+      p.z = w.z;
+    }
+    const atk = s.players.find((p) => p.team === 1 && switchedPos(s, p) === pos)!;
+    const f = toWorld(1, SET_TARGET.lx, SET_TARGET.lz);
+    const t = toWorld(1, FORMATION.offense[pos][0], TOSS_TARGET_LZ);
+    const from = v3(f.x, TOSS_HIT_HEIGHT, f.z);
+    launch(s.ball, from, solveByApex(from, t.x, t.z, 5));
+    s.phase = 'rally';
+    s.serveTossed = true;
+    s.lastTouchTeam = 1;
+    s.lastContactKind = 'toss';
+    s.tossTarget = atk.id;
+    s.teams[1].contactsLeft = 1;
+    s.aiReadyTick = [s.tick, s.tick];
+    computePath(s);
+    updateActors(s);
+    const hit = interceptPoint(s, 1, STANDING_REACH + 0.9)!;
+    const jumpAt = hit.tick - Math.round(riseTime(BLOCK_JUMP_MAX) * TICK_RATE) - 4;
+    for (let i = 0; i < 300; i++) {
+      if (s.tick === jumpAt - 30) press(s, 0);
+      if (s.tick === jumpAt) {
+        s.events.length = 0;
+        release(s, 0);
+        return s.events.flatMap((e) => (e.type === 'jump' && s.players[e.player].team === 0 ? [e.player] : []));
+      }
+      step(s);
+    }
+    return [];
+  };
+
+  it('サイドからの攻撃には、人がブロックに跳ぶと隣の前衛も同時に跳ぶ', () => {
+    expect(blockAgainst(4).length).toBe(2); // 相手のレフト
+    expect(blockAgainst(2).length).toBe(2); // 相手のライト
+  });
+
+  it('センターからの攻撃は1枚', () => {
+    expect(blockAgainst(3).length).toBe(1);
+  });
+
+  it('CPU も2枚で跳ぶ', () => {
+    const s = createGame({ seed: 5, humans: [false, false] });
+    let doubles = 0;
+    for (let i = 0; i < 60 * 240; i++) {
+      step(s);
+      for (const T of [0, 1]) {
+        const n = s.events.filter((e) => e.type === 'jump' && s.players[e.player].team === T && s.players[e.player].jump === 'block').length;
+        if (n >= 2) doubles++;
+      }
+    }
+    expect(doubles).toBeGreaterThan(0);
+  });
+});
